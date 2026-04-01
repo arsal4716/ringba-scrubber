@@ -1,0 +1,93 @@
+:root {
+  --primary: #4361ee;
+  --secondary: #3f37c9;
+  --success: #06d6a0;
+  --danger: #ef476f;
+  --warning: #ffd166;
+  --info: #118ab2;
+  --dark: #073b4c;
+  --light: #f8f9fa;
+}
+
+body {
+  background: #f4f7fc;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 20, 50, 0.08);
+  transition: transform 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 20, 50, 0.12);
+}
+
+.card-title {
+  font-weight: 600;
+  color: var(--dark);
+  letter-spacing: -0.01em;
+}
+
+.table {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table thead th {
+  background-color: #eef2f7;
+  border-bottom: none;
+  font-weight: 600;
+  color: #2d3a4f;
+}
+
+.badge {
+  padding: 0.5em 1em;
+  border-radius: 30px;
+  font-weight: 500;
+}
+
+.btn {
+  border-radius: 30px;
+  padding: 0.5rem 1.5rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border: none;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+  transform: scale(1.02);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--success), #0cb892);
+  border: none;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--danger), #d33f6f);
+  border: none;
+}
+
+.navbar {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.toast {
+  border-radius: 30px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
