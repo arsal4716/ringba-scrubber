@@ -9,8 +9,7 @@ const { toStorageFormat } = require("../utils/phoneNormalizer");
 const SPREADSHEET_ID = "10wDKwHfS5ytpOxSPIr89PG0J1hRoKQ7S_3Qvjk-Pqlk";
 const SHEET_CONFIG_PATH =
   process.env.GOOGLE_SHETS_CREDENTIALS ||
-  path.join(__dirname, "../sheet.json");
-
+  path.join(__dirname, "../config/sheet.json");
 const TAB_MAP = {
   "ACA CPL Scrub": "Database",
   "ACA CPL": "Database",
