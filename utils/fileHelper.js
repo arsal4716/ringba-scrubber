@@ -2,13 +2,7 @@
 
 const fs = require("fs").promises;
 const path = require("path");
-
-function normalizePhone(value) {
-  if (!value) return "";
-  const s = String(value).trim();
-  const noPlus = s.startsWith("+") ? s.slice(1) : s;
-  return noPlus.replace(/[^\d]/g, "");
-}
+const { toStorageFormat } = require("./phoneNormalizer");
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
@@ -20,9 +14,9 @@ const writeNumbersToFile = async (fileName, numbers) => {
 
   const filePath = path.join(dir, fileName);
 
-  const cleaned = (Array.isArray(numbers) ? numbers : [])
-    .map(normalizePhone)
-    .filter(Boolean);
+  const cleaned = [...new Set((Array.isArray(numbers) ? numbers : [])
+    .map(toStorageFormat)
+    .filter(Boolean))];
 
   const content = cleaned.join("\n") + "\n";
   const tmpPath = `${filePath}.tmp-${Date.now()}`;
@@ -32,4 +26,4 @@ const writeNumbersToFile = async (fileName, numbers) => {
   return filePath;
 };
 
-module.exports = { writeNumbersToFile, normalizePhone };
+module.exports = { writeNumbersToFile };

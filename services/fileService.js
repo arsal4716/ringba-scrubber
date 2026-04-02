@@ -5,7 +5,10 @@ const path = require("path");
 
 const File = require("../models/File");
 const { deduplicateNumbers } = require("../utils/dedupHelper");
+const { toStorageFormat } = require("../utils/phoneNormalizer");
+const googleSheetsService = require("./googleSheetsService");
 const logger = require("../utils/logger");
+
 const GENERATED_DIR = path.join(__dirname, "../uploads/generated");
 
 async function ensureDir(dirPath) {
@@ -17,23 +20,6 @@ function sanitizeFileName(name) {
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function normalizePhone(value) {
-  if (!value) return "";
-
-  const digits = String(value).replace(/\D/g, "");
-  if (!digits) return "";
-
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return digits.slice(1);
-  }
-
-  if (digits.length > 10) {
-    return digits.slice(-10);
-  }
-
-  return digits;
 }
 
 async function writeNumbersTxt(fileName, numbers) {
@@ -67,7 +53,7 @@ class FileService {
       );
 
       const normalized = rawNumbers
-        .map(normalizePhone)
+        .map(toStorageFormat)
         .filter(Boolean);
 
       const unique = deduplicateNumbers(normalized);
@@ -100,6 +86,17 @@ class FileService {
       logger.info(
         `[fileService] Generated file: ${fileName} totalNumbers=${unique.length} path=${filePath}`
       );
+
+      // Sync only the main campaign tabs user requested
+      if (["ACA", "FE", "SSDI", "Medicare"].includes(p.campaignName)) {
+        try {
+          await googleSheetsService.writePhoneNumbers(p.campaignName, unique);
+        } catch (err) {
+          logger.error(
+            `[fileService] Google Sheet sync failed for ${p.campaignName}: ${err.message}`
+          );
+        }
+      }
 
       docs.push(doc);
     }
@@ -145,4 +142,3 @@ class FileService {
 }
 
 module.exports = new FileService();
-module.exports.normalizePhone = normalizePhone;

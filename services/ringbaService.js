@@ -249,12 +249,6 @@ class RingbaService {
 
     return { numbers: all, fetchedCount: all.length, totalCount: null };
   }
-
-  /**
-   * ✅ Medicare: exact campaignName EQUALS (reg OR RTB) AND callLength > 300
-   * ✅ Uses ONLY TWO columns: campaignName + inboundPhoneNumber
-   * ✅ Chunked to fetch ALL records across 1 year
-   */
   async fetchNumbersForExactCampaignNamesChunked(campaignNames, dateRange, callLengthMinSeconds, opts = {}) {
     if (!Array.isArray(campaignNames) || campaignNames.length === 0) {
       throw new Error("campaignNames[] is required");
@@ -262,8 +256,6 @@ class RingbaService {
     this._validateDateRange(dateRange);
 
     const chunkDays = Math.max(1, Number(opts.chunkDays || 1));
-
-    // OR group for campaignName EQUALS name1 OR name2 ...
     const orCampaign = this._orGroup(
       campaignNames.map((name) => ({
         column: "campaignName",
@@ -275,12 +267,10 @@ class RingbaService {
     const extraFilters = Array.isArray(opts.extraFilters) ? [...opts.extraFilters] : [];
     extraFilters.unshift(orCampaign);
 
-    // We don't call fetchNumbersForCampaign directly because it adds its own campaignName filter.
-    // We call fetchReportPaged ourselves with chunking and our filters.
 
     const valueColumns = [
-      { column: "campaignName" },         // ✅ column 1
-      { column: "inboundPhoneNumber" },   // ✅ column 2
+      { column: "campaignName" },         
+      { column: "inboundPhoneNumber" },   
     ];
 
     const all = [];
