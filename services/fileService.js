@@ -87,8 +87,7 @@ class FileService {
         `[fileService] Generated file: ${fileName} totalNumbers=${unique.length} path=${filePath}`
       );
 
-      // Sync only the main campaign tabs user requested
-      if (["ACA", "FE", "SSDI", "Medicare"].includes(p.campaignName)) {
+      if (["ACA CPL", "ACA CPL Scrub", "FE", "SSDI", "Medicare"].includes(p.campaignName)) {
         try {
           await googleSheetsService.writePhoneNumbers(p.campaignName, unique);
         } catch (err) {
