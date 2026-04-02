@@ -2,3 +2,7 @@
 node_modules
 uploads
 sheet.json
+# secrets
+sheet.json
+config/sheet.json
+.env
