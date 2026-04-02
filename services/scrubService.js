@@ -10,18 +10,19 @@ const Call = require("../models/Call");
 const ScrubJob = require("../models/ScrubJob");
 const buyerApiService = require("./buyerApiService");
 const logger = require("../utils/logger");
-const { normalizePhone, toDNCFormat } = require("../utils/phoneNormalizer");
+const {
+  normalizePhone,
+  toDNCFormat,
+  toNational10,
+} = require("../utils/phoneNormalizer");
 const { CAMPAIGN_DB_MAP, BUYER_API_CAMPAIGNS } = require("../config/constants");
 
 const OUTPUT_DIR = path.join(__dirname, "../uploads/scrub-output");
 
-// ─── Phone column name detection ─────────────────────────────
 const PHONE_COLUMN_ALIASES = [
   "phonenumber",
   "phone",
-  "phonenumber",
   "number",
-  "callerid",
   "callerid",
   "phone number",
 ];
@@ -31,21 +32,21 @@ function detectPhoneColumn(headers) {
     original: h,
     key: String(h).toLowerCase().replace(/\s+/g, ""),
   }));
+
   for (const alias of PHONE_COLUMN_ALIASES) {
     const cleaned = alias.replace(/\s+/g, "");
     const found = normalized.find((h) => h.key === cleaned);
     if (found) return found.original;
   }
+
   return null;
 }
 
-// ─── Batch DB lookups ─────────────────────────────────────────
+async function checkDNCBatch(numbers11) {
+  if (!numbers11.length) return new Set();
 
-async function checkDNCBatch(numbers10) {
-  if (!numbers10.length) return new Set();
-
-  const uniqueNumbers = [...new Set(numbers10)];
-  const dncFormatted = uniqueNumbers.map(toDNCFormat);
+  const uniqueNumbers = [...new Set(numbers11)];
+  const dncFormatted = uniqueNumbers.map(toDNCFormat).filter(Boolean);
 
   const found = await DNC.find({
     phoneNumber: { $in: dncFormatted },
@@ -60,15 +61,17 @@ async function checkDNCBatch(numbers10) {
       .map((x) => x.normalized)
   );
 }
-async function checkCampaignBatch(numbers10, dbCampaignName) {
-  if (!numbers10.length) return new Set();
 
-  const uniqueNumbers = [...new Set(numbers10)];
-  const numbersE164 = uniqueNumbers.map((n) => `+1${n}`);
+async function checkCampaignBatch(numbers11, dbCampaignName) {
+  if (!numbers11.length) return new Set();
+
+  const uniqueNumbers11 = [...new Set(numbers11)];
+  const uniqueNumbers10 = uniqueNumbers11.map((n) => n.slice(1));
+  const uniqueNumbersE164 = uniqueNumbers11.map((n) => `+${n}`);
 
   const found = await Call.find({
     campaignName: dbCampaignName,
-    phoneNumber: { $in: [...uniqueNumbers, ...numbersE164] },
+    phoneNumber: { $in: [...uniqueNumbers11, ...uniqueNumbers10, ...uniqueNumbersE164] },
   })
     .distinct("phoneNumber")
     .lean();
@@ -80,11 +83,9 @@ async function checkCampaignBatch(numbers10, dbCampaignName) {
       .map((x) => x.normalized)
   );
 }
-// ─── CSV helpers ─────────────────────────────────────────────
 
 function escapeCSV(val) {
   const s = val !== undefined && val !== null ? String(val) : "";
-  // Always quote to handle commas and newlines in values
   return `"${s.replace(/"/g, '""')}"`;
 }
 
@@ -92,29 +93,21 @@ function rowToCSVLine(headers, row) {
   return headers.map((h) => escapeCSV(row[h] !== undefined ? row[h] : "")).join(",");
 }
 
-// ─── Main Scrub Service class ─────────────────────────────────
-
 class ScrubService {
   constructor() {
     this.io = null;
   }
 
-  /** Called from server.js after Socket.IO server is created */
   setIO(io) {
     this.io = io;
   }
 
-  /** Emit progress event to all sockets in this job's room */
   emitProgress(jobId, data) {
     if (this.io) {
       this.io.to(`job:${jobId}`).emit("scrub:progress", data);
     }
   }
 
-  /**
-   * Public entry point – called after job is created in DB.
-   * Runs asynchronously; updates DB and emits Socket.IO events.
-   */
   async processJob(jobId) {
     const job = await ScrubJob.findById(jobId);
     if (!job) throw new Error(`ScrubJob ${jobId} not found`);
@@ -159,8 +152,6 @@ class ScrubService {
     }
   }
 
-  // ─── Internal processing orchestrator ──────────────────────
-
   async _process(job) {
     const { _id: jobId, storedFilePath, campaign, originalFileName } = job;
     const ext = path.extname(originalFileName).toLowerCase();
@@ -177,6 +168,7 @@ class ScrubService {
       .basename(originalFileName, ext)
       .replace(/[^\w\-. ]/g, "_")
       .slice(0, 60);
+
     const outputFileName = `scrubbed_${Date.now()}_${safeBase}.csv`;
     const outputPath = path.join(OUTPUT_DIR, outputFileName);
 
@@ -200,7 +192,6 @@ class ScrubService {
         stats
       );
     } else {
-      // .xlsx or .xls
       await this._processXLSX(
         storedFilePath,
         outputPath,
@@ -215,10 +206,7 @@ class ScrubService {
     return { stats, outputFileName };
   }
 
-  // ─── CSV Processing (streaming) ─────────────────────────────
-
   async _processCSV(inputPath, outputPath, campaign, dbCampaign, usesBuyerAPI, jobId, stats) {
-    // Pass 1: count rows and collect all data
     const rows = [];
     let headers = null;
     let phoneCol = null;
@@ -230,9 +218,7 @@ class ScrubService {
         headers = hdrs;
         phoneCol = detectPhoneColumn(hdrs);
         if (!phoneCol) {
-          logger.error(
-            `No phone column detected in headers: ${hdrs.join(", ")}`
-          );
+          logger.error(`No phone column detected in headers: ${hdrs.join(", ")}`);
         }
       });
 
@@ -261,8 +247,6 @@ class ScrubService {
       stats
     );
   }
-
-  // ─── XLSX/XLS Processing ─────────────────────────────────────
 
   async _processXLSX(inputPath, outputPath, campaign, dbCampaign, usesBuyerAPI, jobId, stats) {
     const workbook = XLSX.readFile(inputPath, { cellDates: false });
@@ -294,8 +278,6 @@ class ScrubService {
     );
   }
 
-  // ─── Row processing + CSV writing ────────────────────────────
-
   async _processRowsAndWrite(
     rows,
     headers,
@@ -307,12 +289,10 @@ class ScrubService {
     stats
   ) {
     const BATCH_SIZE = 500;
-    const PROGRESS_EMIT_EVERY = 1000; // rows
+    const PROGRESS_EMIT_EVERY = 1000;
     const outputHeaders = [...(headers || []), "scrub_status"];
 
     const writeStream = fs.createWriteStream(outputPath, { encoding: "utf8" });
-
-    // Write CSV header
     writeStream.write(outputHeaders.map(escapeCSV).join(",") + "\n");
 
     let lastEmit = 0;
@@ -333,7 +313,6 @@ class ScrubService {
 
       stats.processedRows = Math.min(i + BATCH_SIZE, rows.length);
 
-      // Throttle Socket.IO emissions
       if (
         stats.processedRows - lastEmit >= PROGRESS_EMIT_EVERY ||
         stats.processedRows === stats.totalRows
@@ -355,70 +334,75 @@ class ScrubService {
     });
   }
 
-  // ─── Single batch processor ───────────────────────────────
+  async _processBatch(rows, phoneCol, dbCampaign, usesBuyerAPI, stats) {
+    const entries = rows.map((row) => {
+      const raw = phoneCol ? row[phoneCol] || "" : "";
+      const parsed = normalizePhone(raw);
+      return {
+        row,
+        original: parsed.original,
+        normalized: parsed.normalized, // 1XXXXXXXXXX
+        national: parsed.national,     // XXXXXXXXXX
+        valid: parsed.valid,
+      };
+    });
 
-async _processBatch(rows, phoneCol, dbCampaign, usesBuyerAPI, stats) {
-  const t0 = Date.now();
+    const validEntries = entries.filter((e) => e.valid);
+    const validNumbers11 = [...new Set(validEntries.map((e) => e.normalized))];
 
-  const entries = rows.map((row) => {
-    const raw = phoneCol ? row[phoneCol] || "" : "";
-    const { original, normalized, valid } = normalizePhone(raw);
-    return { row, original, normalized, valid };
-  });
+    const dncSet = await checkDNCBatch(validNumbers11);
 
-  const t1 = Date.now();
+    const nonDNCEntries = validEntries.filter((e) => !dncSet.has(e.normalized));
+    const nonDNCNumbers11 = [...new Set(nonDNCEntries.map((e) => e.normalized))];
 
-  const validEntries = entries.filter((e) => e.valid);
-  const validNumbers = [...new Set(validEntries.map((e) => e.normalized))];
+    const dupSet = await checkCampaignBatch(nonDNCNumbers11, dbCampaign);
 
-  const dncSet = await checkDNCBatch(validNumbers);
-  const t2 = Date.now();
+    let buyerDupSet = new Set();
+    let needsAPICheck10 = [];
 
-  const nonDNCEntries = validEntries.filter((e) => !dncSet.has(e.normalized));
-  const nonDNCNumbers = [...new Set(nonDNCEntries.map((e) => e.normalized))];
+    if (usesBuyerAPI) {
+      needsAPICheck10 = [
+        ...new Set(
+          nonDNCEntries
+            .filter((e) => !dupSet.has(e.normalized))
+            .map((e) => e.national)
+            .filter(Boolean)
+        ),
+      ];
 
-  const dupSet = await checkCampaignBatch(nonDNCNumbers, dbCampaign);
-  const t3 = Date.now();
+      if (needsAPICheck10.length > 0) {
+        const apiResult = await buyerApiService.checkBatch(needsAPICheck10);
 
-  let buyerDupSet = new Set();
-  let needsAPICheck = [];
-
-  if (usesBuyerAPI) {
-    needsAPICheck = [
-      ...new Set(
-        nonDNCEntries
-          .filter((e) => !dupSet.has(e.normalized))
-          .map((e) => e.normalized)
-      ),
-    ];
-
-    if (needsAPICheck.length > 0) {
-      buyerDupSet = await buyerApiService.checkBatch(needsAPICheck);
+        // Convert buyer API results back to 11-digit normalized set
+        buyerDupSet = new Set(
+          [...apiResult]
+            .map((n) => normalizePhone(n))
+            .filter((x) => x.valid)
+            .map((x) => x.normalized)
+        );
+      }
     }
+
+    return entries.map((entry) => {
+      let scrub_status;
+
+      if (!entry.valid) {
+        scrub_status = "Invalid Number";
+        stats.invalidCount++;
+      } else if (dncSet.has(entry.normalized)) {
+        scrub_status = "DNC";
+        stats.dncCount++;
+      } else if (dupSet.has(entry.normalized) || buyerDupSet.has(entry.normalized)) {
+        scrub_status = "Duplicate";
+        stats.duplicateCount++;
+      } else {
+        scrub_status = "Not Duplicate";
+        stats.nonDuplicateCount++;
+      }
+
+      return { ...entry.row, scrub_status };
+    });
   }
-
-  const t4 = Date.now();
-
-  return entries.map((entry) => {
-    let scrub_status;
-
-    if (!entry.valid) {
-      scrub_status = "Invalid Number";
-      stats.invalidCount++;
-    } else if (dncSet.has(entry.normalized)) {
-      scrub_status = "DNC";
-      stats.dncCount++;
-    } else if (dupSet.has(entry.normalized) || buyerDupSet.has(entry.normalized)) {
-      scrub_status = "Duplicate";
-      stats.duplicateCount++;
-    } else {
-      scrub_status = "Not Duplicate";
-      stats.nonDuplicateCount++;
-    }
-
-    return { ...entry.row, scrub_status };
-  });
-}
 }
 
 module.exports = new ScrubService();
