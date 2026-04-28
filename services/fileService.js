@@ -11,6 +11,18 @@ const logger = require("../utils/logger");
 
 const GENERATED_DIR = path.join(__dirname, "../uploads/generated");
 
+// Campaigns that sync to Google Sheets — value is the tab name to write to.
+// Campaigns NOT in this map (DonateAKar, AutoInsuranceXfers) get txt files only.
+const SHEET_SYNC_MAP = {
+  "ACAXfers":        "Database",
+  "AssuredHealthACA":"Database",
+  "ACA CPL":         "Database",
+  "ACA CPL Scrub":   "Database",
+  "FE":              "FE",
+  "SSDI":            "SSDI",
+  "Medicare":        "Medicare",
+};
+
 async function ensureDir(dirPath) {
   await fs.promises.mkdir(dirPath, { recursive: true });
 }
@@ -37,14 +49,25 @@ async function writeNumbersTxt(fileName, numbers) {
 
 class FileService {
   /**
-   * Generate .txt files for campaign plans.
+   * Generate .txt files for campaign plans, then sync to Google Sheets.
+   *
+   * Sheets are written ONCE PER TAB at the end of the run — all campaigns that
+   * share the same tab (e.g. ACAXfers + AssuredHealthACA → Database) have their
+   * numbers merged and deduped before a single clear+write. This prevents a
+   * second campaign's write from wiping the first campaign's data.
+   *
    * @param {string} dateStr
-   * @param {{campaignName:string, fetchType:'45days'|'1year'|'combined', numbers:string[]}[]} plans
+   * @param {{campaignName:string, fetchType:string, numbers:string[]}[]} plans
    */
   async generateFiles(dateStr, plans) {
     const docs = [];
     if (!Array.isArray(plans) || plans.length === 0) return docs;
 
+    // Accumulate numbers per sheet tab across all plans.
+    // Key = tab name (e.g. "Database"), value = combined raw numbers array.
+    const tabNumbers = new Map();
+
+    // ── Step 1: generate txt files ───────────────────────────────────────────
     for (const p of plans) {
       const rawNumbers = p?.numbers || [];
 
@@ -52,10 +75,7 @@ class FileService {
         `[fileService] Preparing file for ${p.campaignName} (${p.fetchType}) rawCount=${rawNumbers.length}`
       );
 
-      const normalized = rawNumbers
-        .map(toStorageFormat)
-        .filter(Boolean);
-
+      const normalized = rawNumbers.map(toStorageFormat).filter(Boolean);
       const unique = deduplicateNumbers(normalized);
 
       logger.info(
@@ -71,7 +91,6 @@ class FileService {
 
       const rawName = this._generateFileName(dateStr, p.campaignName, p.fetchType);
       const fileName = sanitizeFileName(rawName);
-
       const filePath = await writeNumbersTxt(fileName, unique);
 
       const doc = await File.create({
@@ -87,17 +106,35 @@ class FileService {
         `[fileService] Generated file: ${fileName} totalNumbers=${unique.length} path=${filePath}`
       );
 
-      if (["ACA CPL", "ACA CPL Scrub", "FE", "SSDI", "Medicare"].includes(p.campaignName)) {
-        try {
-          await googleSheetsService.writePhoneNumbers(p.campaignName, unique);
-        } catch (err) {
-          logger.error(
-            `[fileService] Google Sheet sync failed for ${p.campaignName}: ${err.message}`
-          );
-        }
-      }
-
       docs.push(doc);
+
+      // Accumulate into the correct sheet tab (if this campaign syncs to sheets)
+      const tabName = SHEET_SYNC_MAP[p.campaignName];
+      if (tabName) {
+        if (!tabNumbers.has(tabName)) tabNumbers.set(tabName, []);
+        tabNumbers.get(tabName).push(...unique);
+      }
+    }
+
+    // ── Step 2: write each tab ONCE with all combined numbers ─────────────────
+    // This means ACAXfers + AssuredHealthACA are merged into one clear+write on
+    // the Database tab — no second campaign can wipe the first's data.
+    for (const [tabName, numbers] of tabNumbers) {
+      const finalUnique = deduplicateNumbers(
+        numbers.map(toStorageFormat).filter(Boolean)
+      );
+
+      logger.info(
+        `[fileService] Syncing tab=${tabName} combinedCount=${numbers.length} finalUnique=${finalUnique.length}`
+      );
+
+      try {
+        await googleSheetsService.writePhoneNumbersToTab(tabName, finalUnique);
+      } catch (err) {
+        logger.error(
+          `[fileService] Google Sheet sync failed for tab=${tabName}: ${err.message}`
+        );
+      }
     }
 
     return docs;
@@ -109,6 +146,15 @@ class FileService {
     if (campaign === "SSDI") return `${dateStr} – SSDI calls (45d + 1y).txt`;
     if (campaign === "MedicareXfersCPL") {
       return `${dateStr} – last 1 year Medicare-Xfers-CPL (reg + RTB).txt`;
+    }
+    if (campaign === "AssuredHealthACA") {
+      return `${dateStr} – Assured Health ACA-Xfers-CPL (hasConnected, 30d).txt`;
+    }
+    if (campaign === "DonateAKar") {
+      return `${dateStr} – Donate a Kar calls (90d > 60s).txt`;
+    }
+    if (campaign === "AutoInsuranceXfers") {
+      return `${dateStr} – Auto Insurance Xfers-RevShare (6mo > 3min).txt`;
     }
 
     const label =

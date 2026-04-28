@@ -6,14 +6,28 @@ const getTodayInTimezone = (timezone) => {
 
 const getDateRange = (timezone, type) => {
   const today = getTodayInTimezone(timezone);
-  let startDate, endDate;
-  if (type === '1year') {
-    startDate = today.clone().subtract(365, 'days').toDate();
-    endDate = today.clone().endOf('day').toDate();
-  } else { 
-    startDate = today.clone().subtract(45, 'days').toDate();
-    endDate = today.clone().endOf('day').toDate();
+  const endDate = today.clone().endOf('day').toDate();
+  let startDate;
+
+  switch (type) {
+    case '1year':
+      startDate = today.clone().subtract(365, 'days').toDate();
+      break;
+    case '6months':
+      startDate = today.clone().subtract(6, 'months').toDate();
+      break;
+    case '90days':
+      startDate = today.clone().subtract(90, 'days').toDate();
+      break;
+    case '30days':
+      startDate = today.clone().subtract(30, 'days').toDate();
+      break;
+    case '45days':
+    default:
+      startDate = today.clone().subtract(45, 'days').toDate();
+      break;
   }
+
   return { startDate, endDate };
 };
 

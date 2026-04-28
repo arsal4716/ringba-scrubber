@@ -141,6 +141,7 @@ const executeFetch = async (timezone) => {
     const runId = `${moment.tz(timezone).format("YYYY-MM-DD")}-${Date.now()}`;
 
     const tasks = [
+      // ── EXISTING ─────────────────────────────────────────────────────────────
       {
         campaignName: "FE",
         fetchType: "45days",
@@ -169,7 +170,6 @@ const executeFetch = async (timezone) => {
         chunkDays: 1,
         mergeKey: "ACAXfers_combined",
       },
-
       {
         campaignName: "SSDI",
         fetchType: "45days",
@@ -199,6 +199,37 @@ const executeFetch = async (timezone) => {
         chunkDays: 1,
         mergeKey: "MedicareXfersCPL_combined",
       },
+
+      {
+        campaignName: "AssuredHealthACA",
+        fetchType: "30days",
+        mode: "targetName",
+        targetName: "Assured Health/GMH-ACA-Xfers-CPL with SIP",
+        hasConnected: true,
+        dateRange: getDateRange(timezone, "30days"),
+        callLengthMin: null,
+        chunkDays: 1,
+      },
+
+      {
+        campaignName: "DonateAKar",
+        fetchType: "90days",
+        mode: "contains",
+        ringbaPattern: "Donate a Kar",
+        dateRange: getDateRange(timezone, "90days"),
+        callLengthMin: 60,
+        chunkDays: 1,
+      },
+
+      {
+        campaignName: "AutoInsuranceXfers",
+        fetchType: "6months",
+        mode: "contains",
+        ringbaPattern: "Auto Insurance Xfers-RevShare",
+        dateRange: getDateRange(timezone, "6months"),
+        callLengthMin: 180,
+        chunkDays: 1,
+      },
     ];
 
     const results = [];
@@ -212,7 +243,7 @@ const executeFetch = async (timezone) => {
     // 1) FETCH
     for (const t of tasks) {
       logger.info(
-        `[executeFetch] Fetching campaign=${t.campaignName} fetchType=${t.fetchType} pattern=${t.ringbaPattern || "exactNames"} callLengthMin=${t.callLengthMin}`
+        `[executeFetch] Fetching campaign=${t.campaignName} fetchType=${t.fetchType} pattern=${t.ringbaPattern || t.targetName || "exactNames"} callLengthMin=${t.callLengthMin}`
       );
 
       let fetchedNumbers = [];
@@ -223,6 +254,15 @@ const executeFetch = async (timezone) => {
             t.dateRange,
             t.callLengthMin,
             { chunkDays: t.chunkDays || 1 }
+          );
+          fetchedNumbers = out.numbers || [];
+          totalFetched += out.fetchedCount || fetchedNumbers.length;
+        } else if (t.mode === "targetName") {
+          const out = await ringbaService.fetchNumbersForTargetNameChunked(
+            t.targetName,
+            t.dateRange,
+            t.callLengthMin,
+            { chunkDays: t.chunkDays || 1, hasConnected: t.hasConnected === true }
           );
           fetchedNumbers = out.numbers || [];
           totalFetched += out.fetchedCount || fetchedNumbers.length;
@@ -311,6 +351,7 @@ const executeFetch = async (timezone) => {
         }
         filePlans.get(key).numbers.push(...afterDNC);
       } else {
+        // AssuredHealthACA, DonateAKar, AutoInsuranceXfers all land here — standalone files
         const key = `${r.campaignName}_${r.fetchType}`;
         filePlans.set(key, {
           campaignName: r.campaignName,

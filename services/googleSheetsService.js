@@ -10,9 +10,12 @@ const SPREADSHEET_ID = "10wDKwHfS5ytpOxSPIr89PG0J1hRoKQ7S_3Qvjk-Pqlk";
 const SHEET_CONFIG_PATH =
   process.env.GOOGLE_SHETS_CREDENTIALS ||
   path.join(__dirname, "../config/sheet.json");
+
 const TAB_MAP = {
   "ACA CPL Scrub": "Database",
   "ACA CPL": "Database",
+  "ACAXfers": "Database",
+  "AssuredHealthACA": "Database",
   FE: "FE",
   SSDI: "SSDI",
   Medicare: "Medicare",
@@ -74,10 +77,14 @@ class GoogleSheetsService {
     });
   }
 
-  async writePhoneNumbers(campaignName, numbers) {
-    const tabName = this.getTabName(campaignName);
+  /**
+   * Write a combined, deduplicated list of numbers directly to a tab by tab name.
+   * Does ONE clear then ONE write — safe to call once per tab per run even when
+   * multiple campaigns (e.g. ACAXfers + AssuredHealthACA) share the same tab.
+   */
+  async writePhoneNumbersToTab(tabName, numbers) {
     if (!tabName) {
-      logger.warn(`[googleSheetsService] No tab mapping for campaign=${campaignName}`);
+      logger.warn(`[googleSheetsService] writePhoneNumbersToTab called with no tabName`);
       return;
     }
 
@@ -87,16 +94,15 @@ class GoogleSheetsService {
         .filter(Boolean)
     )];
 
-    const sheets = await this.getClient();
-
     await this.ensureHeader(tabName);
     await this.clearTabDataKeepHeader(tabName);
 
     if (!cleaned.length) {
-      logger.warn(`[googleSheetsService] No valid numbers to write for ${campaignName}`);
+      logger.warn(`[googleSheetsService] No valid numbers to write for tab=${tabName}`);
       return;
     }
 
+    const sheets = await this.getClient();
     const CHUNK_SIZE = 5000;
 
     for (let i = 0; i < cleaned.length; i += CHUNK_SIZE) {
@@ -119,8 +125,21 @@ class GoogleSheetsService {
     }
 
     logger.info(
-      `[googleSheetsService] Sync complete for campaign=${campaignName}, total=${cleaned.length}, tab=${tabName}`
+      `[googleSheetsService] Sync complete for tab=${tabName}, total=${cleaned.length}`
     );
+  }
+
+  /**
+   * Legacy single-campaign write — kept for any direct calls outside fileService.
+   * Internally delegates to writePhoneNumbersToTab.
+   */
+  async writePhoneNumbers(campaignName, numbers) {
+    const tabName = this.getTabName(campaignName);
+    if (!tabName) {
+      logger.warn(`[googleSheetsService] No tab mapping for campaign=${campaignName}`);
+      return;
+    }
+    await this.writePhoneNumbersToTab(tabName, numbers);
   }
 }
 

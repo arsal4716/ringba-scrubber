@@ -146,7 +146,7 @@ class RingbaService {
   }
 
   /**
-   * Generic “campaign contains” (server-side filters).
+   * Generic "campaign contains" (server-side filters).
    * Note: use chunked wrapper for big volumes.
    */
   async fetchNumbersForCampaign(campaignContains, dateRange, callLengthMinSeconds, opts = {}) {
@@ -210,14 +210,14 @@ class RingbaService {
   }
 
   /**
-   * ✅ Chunked wrapper to bypass ~10k cap.
-   * Use for large campaigns (70–80k).
+   * Chunked wrapper to bypass ~10k cap.
+   * Use for large campaigns (70-80k).
    */
   async fetchNumbersForCampaignChunked(campaignContains, dateRange, callLengthMinSeconds, opts = {}) {
     this._validateDateRange(dateRange);
 
     const maxSingleQueryRows = Number(opts.maxSingleQueryRows || 9000);
-    const chunkDays = Math.max(1, Number(opts.chunkDays || 1)); // default 1 day for safety
+    const chunkDays = Math.max(1, Number(opts.chunkDays || 1));
 
     // First try single query for small datasets
     const first = await this.fetchNumbersForCampaign(campaignContains, dateRange, callLengthMinSeconds, opts);
@@ -249,6 +249,78 @@ class RingbaService {
 
     return { numbers: all, fetchedCount: all.length, totalCount: null };
   }
+
+  async fetchNumbersForTargetNameChunked(targetName, dateRange, callLengthMinSeconds, opts = {}) {
+    if (!targetName) throw new Error("targetName is required");
+    this._validateDateRange(dateRange);
+
+    const chunkDays = Math.max(1, Number(opts.chunkDays || 1));
+
+    const all = [];
+    let curStart = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+
+    while (curStart <= end) {
+      const curEnd = new Date(curStart);
+      curEnd.setUTCDate(curEnd.getUTCDate() + chunkDays);
+      if (curEnd > end) curEnd.setTime(end.getTime());
+
+      const filters = [
+        this._group({
+          column: "targetName",
+          value: targetName,
+          comparisonType: "EQUALS",
+        }),
+      ];
+
+      if (opts.hasConnected === true) {
+        filters.push(
+          this._group({
+            column: "hasConnected",
+            value: "yes",
+            comparisonType: "EQUALS",
+          })
+        );
+      }
+
+      if (callLengthMinSeconds && Number(callLengthMinSeconds) > 0) {
+        filters.push(
+          this._group({
+            column: "callLengthInSeconds",
+            value: String(Number(callLengthMinSeconds)),
+            comparisonType: "GREATER_THAN",
+          })
+        );
+      }
+
+      if (Array.isArray(opts.extraFilters) && opts.extraFilters.length) {
+        filters.push(...opts.extraFilters);
+      }
+
+      const valueColumns = [
+        { column: "targetName" },
+        { column: "inboundPhoneNumber" },
+      ];
+
+      const { records } = await this.fetchReportPaged({
+        reportStart: curStart,
+        reportEnd: curEnd,
+        valueColumns,
+        filters,
+        size: Number(opts.size || process.env.RINGBA_PAGE_SIZE || 1000),
+      });
+
+      for (const rec of records) {
+        const num = normalizePhone(rec?.inboundPhoneNumber);
+        if (num) all.push(num);
+      }
+
+      curStart = new Date(curEnd.getTime() + 1);
+    }
+
+    return { numbers: all, fetchedCount: all.length, totalCount: null };
+  }
+
   async fetchNumbersForExactCampaignNamesChunked(campaignNames, dateRange, callLengthMinSeconds, opts = {}) {
     if (!Array.isArray(campaignNames) || campaignNames.length === 0) {
       throw new Error("campaignNames[] is required");
@@ -267,10 +339,9 @@ class RingbaService {
     const extraFilters = Array.isArray(opts.extraFilters) ? [...opts.extraFilters] : [];
     extraFilters.unshift(orCampaign);
 
-
     const valueColumns = [
-      { column: "campaignName" },         
-      { column: "inboundPhoneNumber" },   
+      { column: "campaignName" },
+      { column: "inboundPhoneNumber" },
     ];
 
     const all = [];
