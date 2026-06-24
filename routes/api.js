@@ -22,6 +22,14 @@ const {
   getPublisherJobs,
 } = require("../controllers/publisherController");
 
+const {
+  getTargets,
+  createTarget,
+  updateTarget,
+  deleteTarget,
+  runNow,
+} = require("../controllers/targetController");
+
 // ─── Schedule (existing) ──────────────────────────────────────
 router.get("/schedule", getSchedule);
 router.post("/schedule", saveSchedule);
@@ -42,6 +50,13 @@ router.get("/admin/publishers", getPublishers);
 router.post("/admin/publishers", createPublisher);
 router.put("/admin/publishers/:id", updatePublisher);
 router.delete("/admin/publishers/:id", deletePublisher);
+
+// ─── Targets - Ringba upload automation (NEW) ─────────────────
+router.get("/targets", getTargets);
+router.post("/targets", createTarget);
+router.post("/targets/run", runNow);
+router.put("/targets/:id", updateTarget);
+router.delete("/targets/:id", deleteTarget);
 
 // ─── Publisher - Scrub workflow (NEW) ─────────────────────────
 router.post("/publisher/verify", verifyPublisher);
