@@ -20,6 +20,7 @@ import Schedule from './pages/Schedule';
 import DNCUpload from './pages/DNCUpload';
 import Files from './pages/Files';
 import Admin from './pages/Admin';
+import Targets from './pages/Targets';
 import Publisher from './pages/Publisher';
 import API from './services/api';
 
@@ -223,6 +224,9 @@ function AppShell() {
                 <Nav.Link as={NavLink} to="/schedule" className="px-3">Schedule</Nav.Link>
                 <Nav.Link as={NavLink} to="/dnc-upload" className="px-3">DNC Upload</Nav.Link>
                 <Nav.Link as={NavLink} to="/files" className="px-3">Files</Nav.Link>
+                <Nav.Link as={NavLink} to="/targets" className="px-3 text-success fw-semibold">
+                  🎯 Targets
+                </Nav.Link>
                 <Nav.Link as={NavLink} to="/admin" className="px-3 text-warning fw-semibold">
                   ⚙️ Admin
                 </Nav.Link>
@@ -288,6 +292,14 @@ function AppShell() {
           element={
             <ProtectedRoute>
               <Files />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/targets"
+          element={
+            <ProtectedRoute>
+              <Targets />
             </ProtectedRoute>
           }
         />

@@ -14,6 +14,7 @@ const GENERATED_DIR = path.join(__dirname, "../uploads/generated");
 // Campaigns that sync to Google Sheets — value is the tab name to write to.
 // Campaigns NOT in this map (DonateAKar, AutoInsuranceXfers) get txt files only.
 const SHEET_SYNC_MAP = {
+  "ACA":             "Database",
   "ACAXfers":        "Database",
   "AssuredHealthACA":"Database",
   "ACA CPL":         "Database",
@@ -59,6 +60,45 @@ class FileService {
    * @param {string} dateStr
    * @param {{campaignName:string, fetchType:string, numbers:string[]}[]} plans
    */
+  /**
+   * Generate a single suppression .txt for a product's final number
+   * list. Does NOT touch Google Sheets — the daily cron syncs sheets
+   * itself (so it can control tab + ordering). Returns the File doc
+   * (with filePath) or null when there are no numbers.
+   *
+   * @param {string} dateStr   e.g. "25 Jun"
+   * @param {string} product   e.g. "ACA" | "SSDI"
+   * @param {string[]} numbers final, deduped numbers
+   */
+  async generateProductFile(dateStr, product, numbers) {
+    const normalized = (numbers || []).map(toStorageFormat).filter(Boolean);
+    const unique = deduplicateNumbers(normalized);
+
+    if (!unique.length) {
+      logger.warn(`[fileService] No numbers for product=${product}; skipping file`);
+      return null;
+    }
+
+    const rawName = `${dateStr} – ${product} suppression (auto).txt`;
+    const fileName = sanitizeFileName(rawName);
+    const filePath = await writeNumbersTxt(fileName, unique);
+
+    const doc = await File.create({
+      fileName,
+      filePath,
+      campaignName: product,
+      fetchType: "combined",
+      totalNumbers: unique.length,
+      createdAt: new Date(),
+    });
+
+    logger.info(
+      `[fileService] Generated product file: ${fileName} totalNumbers=${unique.length}`
+    );
+
+    return doc;
+  }
+
   async generateFiles(dateStr, plans) {
     const docs = [];
     if (!Array.isArray(plans) || plans.length === 0) return docs;

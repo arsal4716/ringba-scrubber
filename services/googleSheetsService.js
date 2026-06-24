@@ -12,6 +12,7 @@ const SHEET_CONFIG_PATH =
   path.join(__dirname, "../config/sheet.json");
 
 const TAB_MAP = {
+  "ACA": "Database",
   "ACA CPL Scrub": "Database",
   "ACA CPL": "Database",
   "ACAXfers": "Database",

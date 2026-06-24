@@ -3,7 +3,8 @@ const mongoose = require("mongoose");
 const callSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true, index: true },
   campaignName: { type: String, required: true, index: true },
-  fetchType: { type: String, enum: ["45days", "1year"], required: true },
+  // Source/window key, e.g. "ringba", "qc", "callgrid" (legacy: "45days","1year")
+  fetchType: { type: String, required: true },
   fetchedAt: { type: Date, default: Date.now, index: true },
   createdAt: { type: Date, default: Date.now, index: true },
 });

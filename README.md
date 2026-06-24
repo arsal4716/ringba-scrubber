@@ -124,6 +124,59 @@ Open http://localhost:5173 for development, http://localhost:5000 for production
 
 ---
 
+## Daily Fetch & Ringba Upload Automation
+
+The daily cron (`cron/fetchCron.js`) is fully product-driven via
+`config/constants.js` → `PRODUCTS`. For each active product it:
+
+1. **Fetches** numbers from every enabled source
+2. **Saves** a per-source snapshot to MongoDB (`Call` collection)
+3. **Combines** → normalizes → dedupes → removes DNC numbers
+4. **Writes** the final list to the product's Google Sheet tab
+5. **Generates** a suppression `.txt` file
+6. **Uploads** that file to Ringba as a **Bulk Tag** and re-points every
+   enabled ping-tree **Target** for that product at the new tag
+
+### Products & sources
+
+| Product | Sources | Sheet tab |
+|---|---|---|
+| **ACA** | Ringba (campaign contains `ACA`, paid, last 30d) + QC tools (last 6 months, `Sales`, `ACA`) + CallGrid *(stubbed/skipped)* | `Database` |
+| **SSDI** | QC tools only (last 6 months, `Sales`/paid, `SSDI`) | `SSDI` |
+
+To change windows, search terms, paid/disposition filters, or add a
+source, edit `PRODUCTS` in `config/constants.js`.
+
+### Data sources
+
+- **Ringba report API** — `services/ringbaService.js` (Token auth). Used for
+  the ACA paid-call fetch.
+- **QC tools** — `services/qcToolsService.js`. Logs in to
+  `callcheckai.com`, caches the JWT, and pulls the `callerId` column from the
+  CSV export.
+- **CallGrid** — `services/callGridService.js`. **Not wired up yet** — it is a
+  safe stub that returns nothing unless `CALLGRID_API_BASE` /
+  `CALLGRID_API_TOKEN` are configured and the source is enabled.
+
+### Ringba Bulk Tag upload (`services/ringbaUploadService.js`)
+
+Uses the account-scoped v2 API (**Bearer** auth — separate from the report
+API). Per target:
+
+1. `POST /bulkTags { name, csv_list }` → new `bulkTagUpload.id`
+2. `GET /pingtreetargets/{id}` → full target object
+3. Replace `criteria[*].bulkCriteria.id` with the new bulk tag id
+4. `PATCH /pingtreetargets/{id}` with the full object
+
+### Managing targets
+
+Add the Ringba ping-tree target IDs that should receive each product's file on
+the **🎯 Targets** admin page (or via the `/api/targets` endpoints). Each row
+maps `product → ringbaTargetId` and shows the last upload status / Bulk Tag id.
+Use **Run Now** to trigger the whole pipeline on demand.
+
+---
+
 ## Processing Pipeline
 
 ```
@@ -202,6 +255,15 @@ Buyer API Check (ACA CPL Scrub only)
 | GET | `/api/publisher/job/:jobId` | Get job status + stats |
 | GET | `/api/publisher/job/:jobId/download` | Download scrubbed CSV |
 | GET | `/api/publisher/jobs` | List recent jobs |
+
+### Targets (Ringba upload automation)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/targets` | List Ringba targets + available products |
+| POST | `/api/targets` | Create a target (name, product, ringbaTargetId) |
+| PUT | `/api/targets/:id` | Update a target |
+| DELETE | `/api/targets/:id` | Delete a target |
+| POST | `/api/targets/run` | Trigger the full fetch → file → sheet → Ringba upload now |
 
 ### Existing (Preserved)
 | Method | Path | Description |
