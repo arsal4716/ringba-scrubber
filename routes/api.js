@@ -3,7 +3,7 @@ const router = express.Router();
 const { login } = require("../controllers/authController");
 router.post("/auth/login", login);
 const { saveSchedule, getSchedule } = require("../controllers/scheduleController");
-const { uploadDNC } = require("../controllers/dncController");
+const { uploadDNC, getDNCCount } = require("../controllers/dncController");
 const { getFiles, downloadFile, deleteFile } = require("../controllers/filesController");
 const { getDashboard } = require("../controllers/dashboardController");
 
@@ -12,6 +12,7 @@ const {
   createPublisher,
   updatePublisher,
   deletePublisher,
+  getScrubJobs,
 } = require("../controllers/adminController");
 
 const {
@@ -30,12 +31,15 @@ const {
   runNow,
 } = require("../controllers/targetController");
 
+const { runKaliper } = require("../controllers/kaliperController");
+
 // ─── Schedule (existing) ──────────────────────────────────────
 router.get("/schedule", getSchedule);
 router.post("/schedule", saveSchedule);
 
 // ─── DNC (existing) ───────────────────────────────────────────
 router.post("/dnc/upload", uploadDNC);
+router.get("/dnc/count", getDNCCount);
 
 // ─── Files (existing) ─────────────────────────────────────────
 router.get("/files", getFiles);
@@ -47,6 +51,7 @@ router.get("/dashboard", getDashboard);
 
 // ─── Admin - Publisher management (NEW) ──────────────────────
 router.get("/admin/publishers", getPublishers);
+router.get("/admin/scrub-jobs", getScrubJobs);
 router.post("/admin/publishers", createPublisher);
 router.put("/admin/publishers/:id", updatePublisher);
 router.delete("/admin/publishers/:id", deletePublisher);
@@ -57,6 +62,9 @@ router.post("/targets", createTarget);
 router.post("/targets/run", runNow);
 router.put("/targets/:id", updateTarget);
 router.delete("/targets/:id", deleteTarget);
+
+// ─── Kaliper - Suppressed CallerID report (NEW) ───────────────
+router.post("/kaliper/run", runKaliper);
 
 // ─── Publisher - Scrub workflow (NEW) ─────────────────────────
 router.post("/publisher/verify", verifyPublisher);

@@ -35,9 +35,18 @@ const app = express();
 const server = http.createServer(app);
 
 // ─── Socket.IO ────────────────────────────────────────────────
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
-  : ["http://localhost:5173", "http://localhost:5000","http://72.60.233.42:5000/"];
+// Origins always allowed, plus any from CORS_ORIGIN env (comma-separated).
+// Trailing slashes are stripped — CORS origins must not have one.
+const defaultOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5000",
+  "http://91.108.112.198:3000",
+];
+const envOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
 const io = new Server(server, {
   cors: {

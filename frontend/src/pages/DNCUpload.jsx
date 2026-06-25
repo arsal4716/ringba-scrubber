@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Container, Form, Button, Card, Alert, Row, Col } from 'react-bootstrap';
-import { FaUpload, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import React, { useState, useEffect } from 'react';
+import { Container, Form, Button, Card, Alert, Row, Col, Badge, Spinner } from 'react-bootstrap';
+import { FaUpload, FaCheckCircle, FaTimesCircle, FaShieldAlt, FaInfoCircle } from 'react-icons/fa';
 import API from '../services/api';
 
 const DNCUpload = () => {
@@ -8,6 +8,20 @@ const DNCUpload = () => {
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [dncCount, setDncCount] = useState(null);
+
+  const fetchCount = async () => {
+    try {
+      const { data } = await API.get('/dnc/count');
+      setDncCount(data.count);
+    } catch {
+      setDncCount(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchCount();
+  }, []);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -29,6 +43,7 @@ const DNCUpload = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setResult(data);
+      fetchCount(); // refresh the live total after insert
     } catch (err) {
       setError(err.response?.data?.error || 'Upload failed');
     } finally {
@@ -40,12 +55,41 @@ const DNCUpload = () => {
     <Container className="mt-5">
       <Row className="justify-content-center">
         <Col md={8} lg={6}>
+          {/* ── Live DNC total ─────────────────────────────── */}
+          <Card className="mb-3 border-danger">
+            <Card.Body className="d-flex align-items-center justify-content-between py-3">
+              <div className="d-flex align-items-center">
+                <FaShieldAlt className="text-danger me-2" size={22} />
+                <span className="fw-semibold">DNC numbers in database</span>
+              </div>
+              <h4 className="mb-0">
+                {dncCount === null
+                  ? <Spinner size="sm" />
+                  : <Badge bg="danger" className="px-3 py-2 fs-6">{dncCount.toLocaleString()}</Badge>}
+              </h4>
+            </Card.Body>
+          </Card>
+
           <Card>
             <Card.Body className="p-4">
               <div className="text-center mb-4">
                 <h2 className="fw-bold">📁 Upload DNC File</h2>
                 <p className="text-muted">CSV or XLSX files only</p>
               </div>
+
+              {/* ── How-to instructions ──────────────────────── */}
+              <Alert variant="info" className="small mb-4">
+                <div className="d-flex align-items-center mb-2 fw-semibold">
+                  <FaInfoCircle className="me-2" />How to upload
+                </div>
+                <ul className="mb-0 ps-3">
+                  <li>Use a <strong>.csv</strong> or <strong>.xlsx</strong> file.</li>
+                  <li>Put the <strong>phone numbers in the first column</strong>, one per row.</li>
+                  <li>The first row is treated as a <strong>header</strong> and skipped.</li>
+                  <li>Any format works — <code>4092384126</code>, <code>(409) 238-4126</code>, <code>+14092384126</code>; they’re normalized automatically.</li>
+                  <li>Duplicates already in the list are ignored, so re-uploading is safe.</li>
+                </ul>
+              </Alert>
               <Form onSubmit={handleUpload}>
                 <Form.Group className="mb-4">
                   <Form.Label className="fw-semibold">Select file</Form.Label>

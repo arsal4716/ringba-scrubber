@@ -21,6 +21,8 @@ import DNCUpload from './pages/DNCUpload';
 import Files from './pages/Files';
 import Admin from './pages/Admin';
 import Targets from './pages/Targets';
+import ScrubFiles from './pages/ScrubFiles';
+import Kaliper from './pages/Kaliper';
 import Publisher from './pages/Publisher';
 import API from './services/api';
 
@@ -90,7 +92,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const from = location.state?.from?.pathname || '/';
+  const from = location.state?.from?.pathname || '/dashboard';
 
   // Already logged in? Redirect away
   useEffect(() => {
@@ -199,9 +201,12 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Don't show the main navbar on login page or publisher page
+  // Don't show the main navbar on the public publisher portal (now the
+  // root page) or the login page.
   const isPublicPage =
-    location.pathname === '/publisher' || location.pathname === '/login';
+    location.pathname === '/' ||
+    location.pathname === '/publisher' ||
+    location.pathname === '/login';
 
   const handleLogout = () => {
     logout();
@@ -214,16 +219,18 @@ function AppShell() {
       {!isPublicPage && authed && (
         <Navbar bg="dark" variant="dark" expand="lg" className="py-3 shadow-sm">
           <Container>
-            <Navbar.Brand as={Link} to="/" className="fw-bold">
+            <Navbar.Brand as={Link} to="/dashboard" className="fw-bold">
               📞 Ringba Scrub Platform
             </Navbar.Brand>
             <Navbar.Toggle aria-controls="main-nav" />
             <Navbar.Collapse id="main-nav">
               <Nav className="ms-auto gap-1 align-items-lg-center">
-                <Nav.Link as={NavLink} to="/" end className="px-3">Dashboard</Nav.Link>
+                <Nav.Link as={NavLink} to="/dashboard" end className="px-3">Dashboard</Nav.Link>
                 <Nav.Link as={NavLink} to="/schedule" className="px-3">Schedule</Nav.Link>
                 <Nav.Link as={NavLink} to="/dnc-upload" className="px-3">DNC Upload</Nav.Link>
                 <Nav.Link as={NavLink} to="/files" className="px-3">Files</Nav.Link>
+                <Nav.Link as={NavLink} to="/scrub-files" className="px-3">Scrub Files</Nav.Link>
+                <Nav.Link as={NavLink} to="/kaliper" className="px-3">Kaliper</Nav.Link>
                 <Nav.Link as={NavLink} to="/targets" className="px-3 text-success fw-semibold">
                   🎯 Targets
                 </Nav.Link>
@@ -256,7 +263,8 @@ function AppShell() {
 
       {/* ── Routes ────────────────────────────────────────── */}
       <Routes>
-        {/* ── PUBLIC: Publisher portal ── */}
+        {/* ── PUBLIC: Publisher portal is the landing page (root) ── */}
+        <Route path="/" element={<Publisher />} />
         <Route path="/publisher" element={<Publisher />} />
 
         {/* ── PUBLIC: Login ── */}
@@ -264,7 +272,7 @@ function AppShell() {
 
         {/* ── PROTECTED: all admin/internal routes ── */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <Dashboard />
@@ -292,6 +300,22 @@ function AppShell() {
           element={
             <ProtectedRoute>
               <Files />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/scrub-files"
+          element={
+            <ProtectedRoute>
+              <ScrubFiles />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/kaliper"
+          element={
+            <ProtectedRoute>
+              <Kaliper />
             </ProtectedRoute>
           }
         />

@@ -1,7 +1,49 @@
 "use strict";
 
+const moment = require("moment-timezone");
 const Publisher = require("../models/Publisher");
+const ScrubJob = require("../models/ScrubJob");
 const { AVAILABLE_CAMPAIGNS } = require("../config/constants");
+
+const APP_TZ = process.env.APP_TIMEZONE || "Asia/Karachi";
+
+// ─── GET /api/admin/scrub-jobs ────────────────────────────────
+// Publisher-uploaded scrub files, with optional date + publisher
+// filters. Defaults to TODAY (app timezone) and never loads the whole
+// collection: filtered by indexed createdAt/publisherName, projected,
+// and capped.
+const getScrubJobs = async (req, res) => {
+  try {
+    const { date, publisherName, limit } = req.query;
+
+    // Day window in the app timezone (default = today).
+    const day = date ? moment.tz(date, "YYYY-MM-DD", APP_TZ) : moment.tz(APP_TZ);
+    if (!day.isValid()) {
+      return res.status(400).json({ error: "Invalid date (use YYYY-MM-DD)" });
+    }
+    const start = day.clone().startOf("day").toDate();
+    const end = day.clone().endOf("day").toDate();
+
+    const query = { createdAt: { $gte: start, $lte: end } };
+    if (publisherName && publisherName.trim()) {
+      query.publisherName = publisherName.trim();
+    }
+
+    const cap = Math.min(Number(limit) || 200, 500);
+
+    const jobs = await ScrubJob.find(query)
+      .select(
+        "publisherName campaign originalFileName status totalRows duplicateCount dncCount invalidCount nonDuplicateCount downloadFilePath createdAt completedAt"
+      )
+      .sort({ createdAt: -1 })
+      .limit(cap)
+      .lean();
+
+    res.json({ jobs, count: jobs.length, date: day.format("YYYY-MM-DD") });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
 
 // ─── GET /api/admin/publishers ────────────────────────────────
 const getPublishers = async (req, res) => {
@@ -95,4 +137,5 @@ module.exports = {
   createPublisher,
   updatePublisher,
   deletePublisher,
+  getScrubJobs,
 };
