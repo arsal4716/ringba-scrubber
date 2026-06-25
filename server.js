@@ -67,6 +67,12 @@ app.use(
 // ─── API Routes ───────────────────────────────────────────────
 app.use("/api", apiRoutes);
 
+// ─── Root-level number check (external integration) ───────────
+// Exposed at /check-number (NOT under /api) to match the existing
+// external caller. Must stay before the frontend catch-all.
+const { checkNumber } = require("./controllers/checkNumberController");
+app.post("/check-number", checkNumber);
+
 // ─── Frontend (production build) ──────────────────────────────
 const FRONTEND_DIST = path.join(__dirname, "frontend", "dist");
 const FRONTEND_INDEX = path.join(FRONTEND_DIST, "index.html");

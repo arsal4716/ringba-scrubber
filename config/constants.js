@@ -4,11 +4,15 @@
 // Publisher / scrub portal config (preserved — used by the
 // publisher upload + scrub features, NOT by the daily fetch).
 // ─────────────────────────────────────────────────────────────
-const AVAILABLE_CAMPAIGNS = ["FE", "SSDI", "ACA CPL Scrub", "ACA CPL", "Medicare"];
+// Campaigns a publisher can scrub against. Trimmed to the two active
+// products; each maps to the campaignName stored in the Call DB.
+const AVAILABLE_CAMPAIGNS = ["ACA", "SSDI"];
 
 const CAMPAIGN_DB_MAP = {
-  FE: "FE",
+  ACA: "ACA",
   SSDI: "SSDI",
+  // ── Legacy labels (kept so older publisher records still resolve) ──
+  FE: "FE",
   "ACA CPL": "ACA",
   "ACA CPL Scrub": "ACA",
   Medicare: "MedicareXfersCPL",
