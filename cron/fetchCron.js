@@ -153,9 +153,9 @@ async function fetchQcSource(productKey, src) {
 
 async function fetchCallGridSource(productKey, src) {
   const out = await callGridService.fetchNumbers({
-    search: src.search || "",
     days: src.days || 30,
     paid: src.paid === true,
+    campaignIds: Array.isArray(src.campaignIds) ? src.campaignIds : [],
   });
   return out.numbers || [];
 }

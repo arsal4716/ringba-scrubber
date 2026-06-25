@@ -50,9 +50,14 @@ const PRODUCTS = {
       },
       callgrid: {
         enabled: true, // CallGrid /call API (requires CALLGRID_* env)
-        search: "ACA",
-        days: 30,
-        paid: true,
+        days: 30, // last 30 days
+        paid: true, // CallPaid = true
+        // CallGrid-internal campaign ids for ACA (from the report filter).
+        campaignIds: [
+          "cmqjw9gez05ca07l8woq8j8xr", // ACA-Xfers-CPA
+          "cmovrt5za033t07jso1cdpvk4", // ACA-Xfers-CPL
+          "cmqsca8by03h806jy18w1flkd", // ACA-Xfers-CPL-RTB
+        ],
       },
     },
   },
