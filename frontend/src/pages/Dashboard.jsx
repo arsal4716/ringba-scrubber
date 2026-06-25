@@ -116,7 +116,7 @@ const Dashboard = () => {
             <Table striped hover responsive>
               <thead>
                 <tr>
-                  <th>Campaign</th>
+                  <th>Campaign / Source</th>
                   <th className="text-center">Fetched</th>
                   <th className="text-center">After Dedup</th>
                   <th className="text-center">After DNC</th>
@@ -125,13 +125,26 @@ const Dashboard = () => {
               </thead>
               <tbody>
                 {job.perCampaignStats.map((stat, idx) => (
-                  <tr key={idx}>
-                    <td className="fw-bold">{stat.campaignName}</td>
-                    <td className="text-center">{stat.fetchedCount}</td>
-                    <td className="text-center text-success">{stat.afterDedup}</td>
-                    <td className="text-center text-warning">{stat.afterDNC}</td>
-                    <td className="text-center text-primary fw-bold">{stat.finalSaved}</td>
-                  </tr>
+                  <React.Fragment key={idx}>
+                    <tr>
+                      <td className="fw-bold">{stat.campaignName}</td>
+                      <td className="text-center">{stat.fetchedCount}</td>
+                      <td className="text-center text-success">{stat.afterDedup}</td>
+                      <td className="text-center text-warning">{stat.afterDNC}</td>
+                      <td className="text-center text-primary fw-bold">{stat.finalSaved}</td>
+                    </tr>
+                    {(stat.sources || []).map((src, sIdx) => (
+                      <tr key={`${idx}-${sIdx}`} className="table-light">
+                        <td className="ps-4 text-muted small text-capitalize">
+                          ↳ {src.source}
+                        </td>
+                        <td className="text-center small">{src.fetched}</td>
+                        <td className="text-center small text-muted">—</td>
+                        <td className="text-center small text-muted">—</td>
+                        <td className="text-center small">{src.saved}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 ))}
               </tbody>
             </Table>

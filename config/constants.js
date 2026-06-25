@@ -78,10 +78,35 @@ const PRODUCTS = {
 // Products the daily cron processes, in order.
 const ACTIVE_PRODUCTS = ["ACA", "SSDI"];
 
+// ─────────────────────────────────────────────────────────────
+// Special per-target overrides.
+//
+// Most targets for a product receive the normal combined suppression
+// file. A target listed here instead gets its OWN file built from a
+// dedicated Ringba query (e.g. long calls only), and only that target
+// is pointed at it — every other target keeps the standard file.
+//
+// Keyed by Ringba target id.
+// ─────────────────────────────────────────────────────────────
+const SPECIAL_TARGETS = {
+  // ProHealthPartners-ACA-Xfers-CPL — last 6 months, calls longer
+  // than 180s (campaignName CONTAINS "ACA").
+  PIca34d71965774f93907e1dcbd17ac221: {
+    label: "ProHealthPartners-ACA-Xfers-CPL",
+    product: "ACA",
+    source: "ringba",
+    search: "ACA",
+    months: 6,
+    callLengthMinSeconds: 180,
+    paid: false,
+  },
+};
+
 module.exports = {
   AVAILABLE_CAMPAIGNS,
   CAMPAIGN_DB_MAP,
   BUYER_API_CAMPAIGNS,
   PRODUCTS,
   ACTIVE_PRODUCTS,
+  SPECIAL_TARGETS,
 };

@@ -15,7 +15,7 @@ const ringbaUploadService = require("../services/ringbaUploadService");
 const googleSheetsService = require("../services/googleSheetsService");
 const fileService = require("../services/fileService");
 
-const { PRODUCTS, ACTIVE_PRODUCTS } = require("../config/constants");
+const { PRODUCTS, ACTIVE_PRODUCTS, SPECIAL_TARGETS } = require("../config/constants");
 const { filterDNC } = require("../utils/dncFilter");
 const { deduplicateNumbers } = require("../utils/dedupHelper");
 const { getTodayInTimezone } = require("../utils/dateHelpers");
@@ -192,6 +192,64 @@ function buildSourceLabel(product) {
   return parts.join(" + ");
 }
 
+/**
+ * Build a dedicated suppression file for each special target mapped to
+ * this product (see SPECIAL_TARGETS). Returns a Map keyed by Ringba
+ * target id → { numbers, fileName }. Targets not in the map use the
+ * normal combined product file.
+ */
+async function buildSpecialTargetFiles(productKey, timezone, dateStr) {
+  const map = new Map();
+
+  for (const [targetId, spec] of Object.entries(SPECIAL_TARGETS || {})) {
+    if (spec.product !== productKey) continue;
+
+    try {
+      const days = (Number(spec.months) || 6) * 30;
+      const dateRange = lastDaysRange(timezone, days);
+
+      const out = await ringbaService.fetchNumbersForCampaignChunked(
+        spec.search,
+        dateRange,
+        spec.callLengthMinSeconds || 0,
+        { chunkDays: 7, hasPayout: spec.paid === true }
+      );
+
+      const normalized = (out.numbers || []).map(normalizePhone).filter(Boolean);
+      const unique = deduplicateNumbers(normalized);
+      const finalNumbers = await filterDNC(unique);
+
+      // e.g. "Ringba 6mo >180s"
+      const label =
+        `Ringba ${spec.months || 6}mo` +
+        (spec.callLengthMinSeconds ? ` >${spec.callLengthMinSeconds}s` : "") +
+        (spec.paid ? " paid" : "");
+
+      const fileDoc = await fileService.generateProductFile(
+        dateStr,
+        productKey,
+        finalNumbers,
+        label
+      );
+
+      map.set(targetId, {
+        numbers: finalNumbers,
+        fileName: fileDoc?.fileName || null,
+      });
+
+      logger.info(
+        `[fetch] special target ${spec.label} (${targetId}) numbers=${finalNumbers.length} file="${fileDoc?.fileName}"`
+      );
+    } catch (err) {
+      logger.error(
+        `[fetch] special target ${spec.label} (${targetId}) build FAILED: ${err?.message || err}`
+      );
+    }
+  }
+
+  return map;
+}
+
 // ──────────────────────────────────────────────────────────────
 // Process one product end-to-end.
 // ──────────────────────────────────────────────────────────────
@@ -263,8 +321,17 @@ async function processProduct(productKey, timezone, runId, dateStr) {
     sourceLabel
   );
 
+  // Build any dedicated per-target files (e.g. ProHealthPartners long calls).
+  const specialFiles = await buildSpecialTargetFiles(productKey, timezone, dateStr);
+
   // Upload to every enabled Ringba target for this product.
-  const targetResults = await uploadToTargets(productKey, finalNumbers, fileDoc?.fileName, dateStr);
+  const targetResults = await uploadToTargets(
+    productKey,
+    finalNumbers,
+    fileDoc?.fileName,
+    dateStr,
+    specialFiles
+  );
 
   return {
     product: productKey,
@@ -281,36 +348,43 @@ async function processProduct(productKey, timezone, runId, dateStr) {
  * Upload the final number list to each enabled Ringba target mapped
  * to this product, then update that target's status row.
  */
-async function uploadToTargets(productKey, numbers, fileName, dateStr) {
+async function uploadToTargets(productKey, numbers, fileName, dateStr, specialFiles = new Map()) {
   const targets = await Target.find({ product: productKey, enabled: true });
   if (!targets.length) {
     logger.warn(`[fetch] No enabled Ringba targets for product=${productKey}`);
     return [];
   }
 
-  if (!numbers.length) {
-    logger.warn(`[fetch] product=${productKey} has 0 numbers — not updating targets`);
-    for (const t of targets) {
+  const results = [];
+  for (const t of targets) {
+    // Special targets get their own file/number list; everyone else
+    // gets the standard combined product file.
+    const special = specialFiles.get(t.ringbaTargetId);
+    const useNumbers = special ? special.numbers : numbers;
+    const bulkTagName =
+      (special && special.fileName) ||
+      fileName ||
+      `${dateStr} – ${productKey} suppression.txt`;
+
+    if (!useNumbers || !useNumbers.length) {
+      logger.warn(`[fetch] Target "${t.name}" has 0 numbers — skipping`);
       t.lastStatus = "Skipped";
       t.lastError = "No numbers to upload";
       t.lastUploadedAt = new Date();
       await t.save();
+      results.push({ target: t.name, status: "Skipped" });
+      continue;
     }
-    return targets.map((t) => ({ target: t.name, status: "Skipped" }));
-  }
 
-  const results = [];
-  for (const t of targets) {
-    const bulkTagName = fileName || `${dateStr} – ${productKey} suppression.txt`;
     try {
       const res = await ringbaUploadService.uploadAndAssign({
         targetId: t.ringbaTargetId,
         name: bulkTagName,
-        numbers,
+        numbers: useNumbers,
       });
 
       t.lastBulkTagId = res.bulkTagId;
-      t.lastUploadedCount = res.tagCount || numbers.length;
+      t.lastUploadedCount = res.tagCount || useNumbers.length;
       t.lastUploadedAt = new Date();
       t.lastStatus = "Success";
       t.lastError = null;
@@ -399,6 +473,11 @@ const executeFetch = async (timezone) => {
         afterDedup: r.unique,
         afterDNC: r.afterDNC,
         finalSaved: saved,
+        sources: r.sourceStats.map((s) => ({
+          source: s.source,
+          fetched: s.fetched,
+          saved: s.saved,
+        })),
       });
     }
 
