@@ -69,8 +69,14 @@ function lastDaysRange(timezone, days) {
  * Replace the DB snapshot for one (product, source) pair.
  */
 async function replaceCallsSnapshot({ campaignName, fetchType, numbers, runId }) {
-  const cleaned = (numbers || []).map(normalizePhone).filter(Boolean);
-  const attempted = cleaned.length;
+  const normalized = (numbers || []).map(normalizePhone).filter(Boolean);
+  const attempted = normalized.length;
+
+  // The source feeds can repeat the same number within one product/source,
+  // but (phoneNumber, campaignName, fetchType) is uniquely indexed — dedupe
+  // here so insertMany doesn't blow up with an E11000 duplicate key error.
+  const cleaned = [...new Set(normalized)];
+  const duplicates = attempted - cleaned.length;
 
   await Call.deleteMany({ campaignName, fetchType });
 
@@ -79,6 +85,12 @@ async function replaceCallsSnapshot({ campaignName, fetchType, numbers, runId })
       `[snapshot] product=${campaignName} source=${fetchType} no numbers after cleanup`
     );
     return { attempted, inserted: 0 };
+  }
+
+  if (duplicates > 0) {
+    logger.warn(
+      `[snapshot] product=${campaignName} source=${fetchType} dropped ${duplicates} duplicate numbers`
+    );
   }
 
   const docs = cleaned.map((phoneNumber) => ({
@@ -94,8 +106,21 @@ async function replaceCallsSnapshot({ campaignName, fetchType, numbers, runId })
   let inserted = 0;
   for (let i = 0; i < docs.length; i += BATCH) {
     const batch = docs.slice(i, i + BATCH);
-    const res = await Call.collection.insertMany(batch, { ordered: false });
-    inserted += res?.insertedCount || batch.length;
+    try {
+      const res = await Call.collection.insertMany(batch, { ordered: false });
+      inserted += res?.insertedCount || batch.length;
+    } catch (err) {
+      // ordered:false keeps inserting past dup keys; count what landed and
+      // only treat non-duplicate errors as fatal.
+      if (err.code === 11000) {
+        inserted += err.result?.insertedCount || 0;
+        logger.warn(
+          `[snapshot] product=${campaignName} source=${fetchType} ignored duplicate keys in batch`
+        );
+      } else {
+        throw err;
+      }
+    }
   }
 
   logger.info(`[snapshot] product=${campaignName} source=${fetchType} inserted=${inserted}`);
