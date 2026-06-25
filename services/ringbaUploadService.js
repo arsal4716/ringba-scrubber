@@ -6,11 +6,11 @@ const logger = require("../utils/logger");
 /**
  * Ringba Bulk Tag automation.
  *
- * Uses the account-scoped v2 API (Bearer auth), which is DIFFERENT
- * from the report API in ringbaService.js (Token auth):
+ * Uses the account-scoped v2 API (same Token auth as the report API
+ * in ringbaService.js):
  *
  *   Base: https://api.ringba.com/v2/{accountId}
- *   Auth: Authorization: Bearer <token>
+ *   Auth: Authorization: Token <token>
  *
  * Flow (per target):
  *   1) POST /bulkTags { name, csv_list } -> bulkTagUpload.id
@@ -55,7 +55,7 @@ class RingbaUploadService {
   }
 
   _headers() {
-    return { Authorization: `Bearer ${TOKEN}` };
+    return { Authorization: `Token ${TOKEN}` };
   }
 
   async _request(method, path, body) {
