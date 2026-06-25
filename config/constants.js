@@ -28,7 +28,7 @@ const BUYER_API_CAMPAIGNS = ["ACA CPL Scrub"];
 // Sources:
 //   ringba   – Ringba call-log report (campaignName CONTAINS + paid + N days)
 //   qc       – QC tools (callcheckai.com) CSV export
-//   callgrid – CallGrid (NOT wired yet — disabled / stubbed)
+//   callgrid – CallGrid /call API (requires CALLGRID_* env, see .env.example)
 // ─────────────────────────────────────────────────────────────
 const PRODUCTS = {
   ACA: {
@@ -49,7 +49,7 @@ const PRODUCTS = {
         search: "ACA", // campaignName CONTAINS "ACA"
       },
       callgrid: {
-        enabled: false, // skipped for now — endpoint stubbed
+        enabled: true, // CallGrid /call API (requires CALLGRID_* env)
         search: "ACA",
         days: 30,
         paid: true,
