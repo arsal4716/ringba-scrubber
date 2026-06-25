@@ -63,7 +63,8 @@ const Dashboard = () => {
                 <Col sm={6}>
                   <p className="mb-2"><strong>Total Fetched:</strong> <span className="fw-bold text-primary">{job.totalFetched || 0}</span></p>
                   <p className="mb-2"><strong>After Dedup:</strong> <span className="fw-bold text-success">{job.totalUniqueAfterDedup || 0}</span></p>
-                  <p className="mb-0"><strong>Saved:</strong> <span className="fw-bold text-info">{job.totalSaved || 0}</span></p>
+                  <p className="mb-2"><strong>Saved:</strong> <span className="fw-bold text-info">{job.totalSaved || 0}</span></p>
+                  <p className="mb-0"><strong>DNC Numbers (in DB):</strong> <span className="fw-bold text-danger">{(dashboard.dncCount || 0).toLocaleString()}</span></p>
                 </Col>
               </Row>
             </Card.Body>
@@ -119,7 +120,6 @@ const Dashboard = () => {
                   <th>Campaign / Source</th>
                   <th className="text-center">Fetched</th>
                   <th className="text-center">After Dedup</th>
-                  <th className="text-center">After DNC</th>
                   <th className="text-center">Saved</th>
                 </tr>
               </thead>
@@ -130,7 +130,6 @@ const Dashboard = () => {
                       <td className="fw-bold">{stat.campaignName}</td>
                       <td className="text-center">{stat.fetchedCount}</td>
                       <td className="text-center text-success">{stat.afterDedup}</td>
-                      <td className="text-center text-warning">{stat.afterDNC}</td>
                       <td className="text-center text-primary fw-bold">{stat.finalSaved}</td>
                     </tr>
                     {(stat.sources || []).map((src, sIdx) => (
@@ -139,7 +138,6 @@ const Dashboard = () => {
                           ↳ {src.source}
                         </td>
                         <td className="text-center small">{src.fetched}</td>
-                        <td className="text-center small text-muted">—</td>
                         <td className="text-center small text-muted">—</td>
                         <td className="text-center small">{src.saved}</td>
                       </tr>

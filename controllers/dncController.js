@@ -1,6 +1,17 @@
 const { upload, processDNCFile } = require('../services/dncService');
+const DNC = require('../models/DNC');
 const path = require('path');
 const fs = require('fs').promises;
+
+// GET /api/dnc/count — total numbers currently in the DNC table.
+const getDNCCount = async (req, res) => {
+  try {
+    const count = await DNC.estimatedDocumentCount();
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get DNC count' });
+  }
+};
 
 const uploadDNC = async (req, res) => {
   upload(req, res, async (err) => {
@@ -33,4 +44,4 @@ const uploadDNC = async (req, res) => {
   });
 };
 
-module.exports = { uploadDNC };
+module.exports = { uploadDNC, getDNCCount };
