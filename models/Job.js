@@ -24,6 +24,14 @@ const jobSchema = new mongoose.Schema({
       afterDedup: Number,
       afterDNC: Number,
       finalSaved: Number,
+      // Per-source breakdown (ringba / qc / callgrid)
+      sources: [
+        {
+          source: String,
+          fetched: Number,
+          saved: Number,
+        },
+      ],
     },
   ],
   createdAt: { type: Date, default: Date.now },
