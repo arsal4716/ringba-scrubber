@@ -70,7 +70,7 @@ class FileService {
    * @param {string} product   e.g. "ACA" | "SSDI"
    * @param {string[]} numbers final, deduped numbers
    */
-  async generateProductFile(dateStr, product, numbers) {
+  async generateProductFile(dateStr, product, numbers, sourceLabel) {
     const normalized = (numbers || []).map(toStorageFormat).filter(Boolean);
     const unique = deduplicateNumbers(normalized);
 
@@ -79,7 +79,9 @@ class FileService {
       return null;
     }
 
-    const rawName = `${dateStr} – ${product} suppression (auto).txt`;
+    // e.g. "25 Jun – ACA suppression (QC 6mo Sales + Ringba 30d paid).txt"
+    const detail = sourceLabel ? ` (${sourceLabel})` : " (auto)";
+    const rawName = `${dateStr} – ${product} suppression${detail}.txt`;
     const fileName = sanitizeFileName(rawName);
     const filePath = await writeNumbersTxt(fileName, unique);
 

@@ -166,6 +166,32 @@ const SOURCE_FETCHERS = {
   callgrid: (productKey, src) => fetchCallGridSource(productKey, src),
 };
 
+// Short, human-readable date-window tokens for QC date presets.
+const QC_PRESET_LABEL = {
+  last_6_months: "6mo",
+  last_3_months: "3mo",
+  last_year: "1y",
+  last_30_days: "30d",
+};
+
+// Build a label describing where this product's numbers came from, e.g.
+// "QC 6mo Sales + Ringba 30d paid" — used in the suppression file name.
+function buildSourceLabel(product) {
+  const parts = [];
+  const s = product.sources || {};
+  if (s.ringba?.enabled) {
+    parts.push(`Ringba ${s.ringba.days || 30}d${s.ringba.paid ? " paid" : ""}`);
+  }
+  if (s.qc?.enabled) {
+    const window = QC_PRESET_LABEL[s.qc.datePreset] || s.qc.datePreset || "";
+    parts.push(`QC ${window} ${s.qc.disposition || ""}`.trim());
+  }
+  if (s.callgrid?.enabled) {
+    parts.push(`CallGrid ${s.callgrid.days || 30}d${s.callgrid.paid ? " paid" : ""}`);
+  }
+  return parts.join(" + ");
+}
+
 // ──────────────────────────────────────────────────────────────
 // Process one product end-to-end.
 // ──────────────────────────────────────────────────────────────
@@ -229,7 +255,13 @@ async function processProduct(productKey, timezone, runId, dateStr) {
   }
 
   // Generate the suppression TXT file.
-  const fileDoc = await fileService.generateProductFile(dateStr, productKey, finalNumbers);
+  const sourceLabel = buildSourceLabel(product);
+  const fileDoc = await fileService.generateProductFile(
+    dateStr,
+    productKey,
+    finalNumbers,
+    sourceLabel
+  );
 
   // Upload to every enabled Ringba target for this product.
   const targetResults = await uploadToTargets(productKey, finalNumbers, fileDoc?.fileName, dateStr);

@@ -83,7 +83,7 @@ class RingbaUploadService {
           err?.message ||
           "Unknown error";
 
-        if (status === 401 || status === 403) {
+        if (status === 401 || status === 403 || status === 404) {
           logger.error(`[ringbaUpload] ${status} on ${method} ${path}: ${msg}`);
           throw err;
         }
@@ -125,33 +125,49 @@ class RingbaUploadService {
     return upload;
   }
 
-  /** STEP 3 — Get the full ping-tree target object. */
-  async getPingTreeTarget(targetId) {
-    const data = await this._request("GET", `/pingtreetargets/${targetId}`);
-    // GET may return the object directly or wrapped under pingTreeTarget.
-    return data?.pingTreeTarget || data;
+  /**
+   * Ringba has two kinds of targets and they live at different paths:
+   *   TA… → simple target          → /targets/{id}
+   *   PI… → ping-tree target group  → /pingtreetargets/{id}
+   * Hitting the wrong one returns 404, so route by the ID prefix.
+   */
+  _targetPath(targetId) {
+    const kind = /^TA/i.test(targetId) ? "targets" : "pingtreetargets";
+    return `/${kind}/${targetId}`;
+  }
+
+  /** STEP 3 — Get the full target object (simple or ping-tree). */
+  async getTarget(targetId) {
+    const data = await this._request("GET", this._targetPath(targetId));
+    // GET may return the object directly or wrapped under a type key.
+    return data?.pingTreeTarget || data?.target || data;
   }
 
   /** STEP 5 — Persist the modified target object. */
-  async patchPingTreeTarget(targetId, targetObject) {
+  async patchTarget(targetId, targetObject) {
     const data = await this._request(
       "PATCH",
-      `/pingtreetargets/${targetId}`,
+      this._targetPath(targetId),
       targetObject
     );
-    return data?.pingTreeTarget || data;
+    return data?.pingTreeTarget || data?.target || data;
   }
 
   /**
-   * Replace every criteria[*].bulkCriteria.id on the target with the
-   * new bulk tag id. Returns the number of bulkCriteria entries changed.
+   * Replace every criteria[*].bulkCriteria tag id on the target with the
+   * new bulk tag id. Ping-tree targets key it as `id`, simple targets as
+   * `Id` — update whichever is present so the swap actually sticks.
+   * Returns the number of bulkCriteria entries changed.
    */
   _replaceBulkCriteriaId(target, newBulkTagId) {
     let replaced = 0;
     const criteria = Array.isArray(target?.criteria) ? target.criteria : [];
     for (const c of criteria) {
-      if (c && c.bulkCriteria && typeof c.bulkCriteria === "object") {
-        c.bulkCriteria.id = newBulkTagId;
+      const bc = c && c.bulkCriteria;
+      if (bc && typeof bc === "object") {
+        if ("Id" in bc) bc.Id = newBulkTagId;
+        if ("id" in bc) bc.id = newBulkTagId;
+        if (!("id" in bc) && !("Id" in bc)) bc.id = newBulkTagId;
         replaced++;
       }
     }
@@ -169,9 +185,9 @@ class RingbaUploadService {
 
     const upload = await this.uploadBulkTag(name, numbers);
 
-    const target = await this.getPingTreeTarget(targetId);
+    const target = await this.getTarget(targetId);
     if (!target || !target.id) {
-      throw new Error(`Ping-tree target ${targetId} not found`);
+      throw new Error(`Target ${targetId} not found`);
     }
 
     const replaced = this._replaceBulkCriteriaId(target, upload.id);
@@ -181,7 +197,7 @@ class RingbaUploadService {
       );
     }
 
-    await this.patchPingTreeTarget(targetId, target);
+    await this.patchTarget(targetId, target);
 
     logger.info(
       `[ringbaUpload] Target ${targetId} updated -> bulkTag ${upload.id} (${replaced} criteria replaced)`
