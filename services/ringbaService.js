@@ -300,6 +300,7 @@ class RingbaService {
       const valueColumns = [
         { column: "targetName" },
         { column: "inboundPhoneNumber" },
+        { column: "callLengthInSeconds" },
       ];
 
       const { records } = await this.fetchReportPaged({
@@ -310,7 +311,14 @@ class RingbaService {
         size: Number(opts.size || process.env.RINGBA_PAGE_SIZE || 1000),
       });
 
+      const minLen = Number(callLengthMinSeconds) || 0;
       for (const rec of records) {
+        // Ringba ignores the server-side GREATER_THAN filter on
+        // callLengthInSeconds, so enforce it client-side too.
+        if (minLen > 0) {
+          const len = Number(rec?.callLengthInSeconds);
+          if (Number.isFinite(len) && len <= minLen) continue;
+        }
         const num = normalizePhone(rec?.inboundPhoneNumber);
         if (num) all.push(num);
       }

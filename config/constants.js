@@ -104,7 +104,9 @@ const SPECIAL_TARGETS = {
     label: "ProHealthPartners-ACA-Xfers-CPL",
     product: "ACA",
     source: "ringba",
-    search: "ACA",
+    // Fetch calls TO this specific Ringba target (not the whole ACA
+    // campaign). Must match the targetName in Ringba's call logs.
+    targetName: "ProHealthPartners-ACA-Xfers-CPL",
     months: 6,
     callLengthMinSeconds: 180,
     paid: false,
