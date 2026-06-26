@@ -20,6 +20,14 @@ const CAMPAIGN_DB_MAP = {
 
 const BUYER_API_CAMPAIGNS = ["ACA CPL Scrub"];
 
+// Which external buyer-dedup API each campaign uses during the publisher
+// scrub. Value is a key into scrubService's BUYER_APIS map; null/absent
+// means DB + DNC only.
+const BUYER_API_BY_CAMPAIGN = {
+  ACA: null, // DB + DNC only
+  SSDI: "aurionx", // Aurionx leads/check API
+};
+
 // ─────────────────────────────────────────────────────────────
 // Daily automation products.
 //
@@ -121,6 +129,7 @@ module.exports = {
   AVAILABLE_CAMPAIGNS,
   CAMPAIGN_DB_MAP,
   BUYER_API_CAMPAIGNS,
+  BUYER_API_BY_CAMPAIGN,
   PRODUCTS,
   ACTIVE_PRODUCTS,
   SPECIAL_TARGETS,

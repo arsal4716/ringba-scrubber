@@ -9,13 +9,23 @@ const DNC = require("../models/DNC");
 const Call = require("../models/Call");
 const ScrubJob = require("../models/ScrubJob");
 const buyerApiService = require("./buyerApiService");
+const aurionxService = require("./aurionxService");
 const logger = require("../utils/logger");
 const {
   normalizePhone,
   toDNCFormat,
   toNational10,
 } = require("../utils/phoneNormalizer");
-const { CAMPAIGN_DB_MAP, BUYER_API_CAMPAIGNS } = require("../config/constants");
+const { CAMPAIGN_DB_MAP, BUYER_API_BY_CAMPAIGN } = require("../config/constants");
+
+// Buyer-dedup API services, keyed by the value in BUYER_API_BY_CAMPAIGN.
+const BUYER_APIS = { tld: buyerApiService, aurionx: aurionxService };
+
+// Resolve the buyer-dedup API for a campaign, or null for DB + DNC only.
+function resolveBuyerApi(campaign) {
+  const key = BUYER_API_BY_CAMPAIGN[campaign];
+  return key ? BUYER_APIS[key] || null : null;
+}
 
 const OUTPUT_DIR = path.join(__dirname, "../uploads/scrub-output");
 
@@ -156,7 +166,7 @@ class ScrubService {
     const { _id: jobId, storedFilePath, campaign, originalFileName } = job;
     const ext = path.extname(originalFileName).toLowerCase();
     const dbCampaign = CAMPAIGN_DB_MAP[campaign];
-    const usesBuyerAPI = BUYER_API_CAMPAIGNS.includes(campaign);
+    const buyerApi = resolveBuyerApi(campaign);
 
     if (!dbCampaign) {
       throw new Error(`Unknown campaign: ${campaign}`);
@@ -187,7 +197,7 @@ class ScrubService {
         outputPath,
         campaign,
         dbCampaign,
-        usesBuyerAPI,
+        buyerApi,
         jobId.toString(),
         stats
       );
@@ -197,7 +207,7 @@ class ScrubService {
         outputPath,
         campaign,
         dbCampaign,
-        usesBuyerAPI,
+        buyerApi,
         jobId.toString(),
         stats
       );
@@ -206,7 +216,7 @@ class ScrubService {
     return { stats, outputFileName };
   }
 
-  async _processCSV(inputPath, outputPath, campaign, dbCampaign, usesBuyerAPI, jobId, stats) {
+  async _processCSV(inputPath, outputPath, campaign, dbCampaign, buyerApi, jobId, stats) {
     const rows = [];
     let headers = null;
     let phoneCol = null;
@@ -242,13 +252,13 @@ class ScrubService {
       phoneCol,
       outputPath,
       dbCampaign,
-      usesBuyerAPI,
+      buyerApi,
       jobId,
       stats
     );
   }
 
-  async _processXLSX(inputPath, outputPath, campaign, dbCampaign, usesBuyerAPI, jobId, stats) {
+  async _processXLSX(inputPath, outputPath, campaign, dbCampaign, buyerApi, jobId, stats) {
     const workbook = XLSX.readFile(inputPath, { cellDates: false });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
@@ -272,7 +282,7 @@ class ScrubService {
       phoneCol,
       outputPath,
       dbCampaign,
-      usesBuyerAPI,
+      buyerApi,
       jobId,
       stats
     );
@@ -284,7 +294,7 @@ class ScrubService {
     phoneCol,
     outputPath,
     dbCampaign,
-    usesBuyerAPI,
+    buyerApi,
     jobId,
     stats
   ) {
@@ -303,7 +313,7 @@ class ScrubService {
         batch,
         phoneCol,
         dbCampaign,
-        usesBuyerAPI,
+        buyerApi,
         stats
       );
 
@@ -334,7 +344,7 @@ class ScrubService {
     });
   }
 
-  async _processBatch(rows, phoneCol, dbCampaign, usesBuyerAPI, stats) {
+  async _processBatch(rows, phoneCol, dbCampaign, buyerApi, stats) {
     const entries = rows.map((row) => {
       const raw = phoneCol ? row[phoneCol] || "" : "";
       const parsed = normalizePhone(raw);
@@ -360,7 +370,7 @@ class ScrubService {
     let buyerDupSet = new Set();
     let needsAPICheck10 = [];
 
-    if (usesBuyerAPI) {
+    if (buyerApi) {
       needsAPICheck10 = [
         ...new Set(
           nonDNCEntries
@@ -371,7 +381,7 @@ class ScrubService {
       ];
 
       if (needsAPICheck10.length > 0) {
-        const apiResult = await buyerApiService.checkBatch(needsAPICheck10);
+        const apiResult = await buyerApi.checkBatch(needsAPICheck10);
 
         // Convert buyer API results back to 11-digit normalized set
         buyerDupSet = new Set(
