@@ -27,8 +27,11 @@ const CAMPAIGN_KEY =
   process.env.AURIONX_CAMPAIGN_KEY || "c2cc5f885d2a3790c85b9c1bde3fa2c3";
 const API_KEY = process.env.AURIONX_API_KEY || "kdmr5";
 
-const MAX_CONCURRENT = Number(process.env.AURIONX_CONCURRENCY) || 50;
-const TIMEOUT_MS = Number(process.env.AURIONX_TIMEOUT_MS) || 4000;
+const MAX_CONCURRENT = Number(process.env.AURIONX_CONCURRENCY) || 120;
+// The API is slow (~3-4s/call); 4s cut off near-complete requests and
+// (worse) marked them not-duplicate. Give them room, and retry timeouts.
+const TIMEOUT_MS = Number(process.env.AURIONX_TIMEOUT_MS) || 12000;
+const MAX_RETRIES = Number(process.env.AURIONX_MAX_RETRIES) || 2;
 const CACHE_TTL_MS = Number(process.env.AURIONX_CACHE_TTL_MS) || 30 * 60 * 1000;
 
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: MAX_CONCURRENT });
@@ -94,39 +97,61 @@ function isDuplicateResponse(data) {
   );
 }
 
-async function checkNumber(phone) {
+function isTransient(err) {
+  return (
+    err?.code === "ECONNABORTED" ||
+    /timeout/i.test(err?.message || "") ||
+    !err?.response // network error, no HTTP response
+  );
+}
+
+// Returns { isDup, ok } — ok=false means the lookup failed (cached as
+// not-duplicate so it never blocks, but counted so we can report it).
+async function _check(phone) {
   const cached = getCached(phone);
-  if (cached !== null) return cached;
+  if (cached !== null) return { isDup: cached, ok: true, cached: true };
 
   const url = `${BASE_URL}/campaignKey/${CAMPAIGN_KEY}?searchBy=phone&searchValue=${encodeURIComponent(phone)}`;
-  const started = Date.now();
 
-  try {
-    const { data } = await api.get(url);
-    const isDup = isDuplicateResponse(data);
-    setCached(phone, isDup);
-    logger.info(`[aurionx] phone=${phone} duplicate=${isDup} ms=${Date.now() - started}`);
-    return isDup;
-  } catch (err) {
-    logger.error(`[aurionx] error phone=${phone} ms=${Date.now() - started} err=${err?.message || err}`);
-    setCached(phone, false);
-    return false;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const { data } = await api.get(url);
+      const isDup = isDuplicateResponse(data);
+      setCached(phone, isDup);
+      return { isDup, ok: true };
+    } catch (err) {
+      if (attempt < MAX_RETRIES && isTransient(err)) continue; // retry transient
+      setCached(phone, false);
+      return { isDup: false, ok: false, err: err?.message || String(err) };
+    }
   }
 }
 
+async function checkNumber(phone) {
+  return (await _check(phone)).isDup;
+}
+
 async function checkBatch(numbers) {
+  const started = Date.now();
   const uniqueNumbers = [...new Set((numbers || []).filter(Boolean))];
   const dupSet = new Set();
+  let errors = 0;
+  let cacheHits = 0;
 
   await Promise.all(
     uniqueNumbers.map((num) =>
       pool.run(async () => {
-        const isDup = await checkNumber(num);
-        if (isDup) dupSet.add(num);
+        const r = await _check(num);
+        if (r.cached) cacheHits++;
+        if (!r.ok) errors++;
+        if (r.isDup) dupSet.add(num);
       })
     )
   );
 
+  logger.info(
+    `[aurionx] batch=${uniqueNumbers.length} duplicates=${dupSet.size} errors=${errors} cacheHits=${cacheHits} ms=${Date.now() - started}`
+  );
   return dupSet;
 }
 
