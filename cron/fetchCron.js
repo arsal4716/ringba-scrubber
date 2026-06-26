@@ -238,7 +238,8 @@ async function buildSpecialTargetFiles(productKey, timezone, dateStr) {
         dateStr,
         productKey,
         finalNumbers,
-        label
+        label,
+        spec.label // file named after the target, e.g. ProHealthPartners-ACA-Xfers-CPL
       );
 
       map.set(targetId, {
@@ -366,9 +367,50 @@ async function uploadToTargets(productKey, numbers, fileName, dateStr, specialFi
 
   const results = [];
   for (const t of targets) {
-    // Special targets get their own file/number list; everyone else
-    // gets the standard combined product file.
     const special = specialFiles.get(t.ringbaTargetId);
+    const spec = SPECIAL_TARGETS[t.ringbaTargetId];
+
+    // Dual-criteria target: one Ringba target with two bulk-tag slots —
+    // assign the combined product file to one and the special file to the
+    // other, per spec.dualAssign order.
+    if (special && spec && Array.isArray(spec.dualAssign) && spec.dualAssign.length) {
+      const sourceMap = {
+        combined: { name: fileName || `${dateStr} – ${productKey}.txt`, numbers },
+        special: { name: special.fileName, numbers: special.numbers },
+      };
+      const assignments = spec.dualAssign
+        .map((k) => sourceMap[k])
+        .filter((a) => a && a.numbers && a.numbers.length);
+
+      try {
+        const res = await ringbaUploadService.uploadAndAssignMulti({
+          targetId: t.ringbaTargetId,
+          assignments,
+        });
+        t.lastBulkTagId = (res.bulkTagIds || []).join(", ");
+        t.lastUploadedCount = numbers.length;
+        t.lastUploadedAt = new Date();
+        t.lastStatus = "Success";
+        t.lastError = null;
+        await t.save();
+        logger.info(
+          `[fetch] Target "${t.name}" (${t.ringbaTargetId}) dual-assigned -> [${(res.bulkTagIds || []).join(", ")}]`
+        );
+        results.push({ target: t.name, status: "Success", bulkTagIds: res.bulkTagIds });
+      } catch (err) {
+        const msg = err?.message || String(err);
+        t.lastStatus = "Failed";
+        t.lastError = msg;
+        t.lastUploadedAt = new Date();
+        await t.save();
+        logger.error(`[fetch] Target "${t.name}" dual-assign FAILED: ${msg}`);
+        results.push({ target: t.name, status: "Failed", error: msg });
+      }
+      continue;
+    }
+
+    // Single-file targets: special ones get their own file/number list;
+    // everyone else gets the standard combined product file.
     const useNumbers = special ? special.numbers : numbers;
     const bulkTagName =
       (special && special.fileName) ||
