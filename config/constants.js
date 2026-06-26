@@ -110,6 +110,10 @@ const SPECIAL_TARGETS = {
     months: 6,
     callLengthMinSeconds: 180,
     paid: false,
+    // This target has TWO bulk-tag criteria. Assign the combined ACA file
+    // to the first criterion and this special long-calls file to the
+    // second (document order). Swap to ["special","combined"] to reverse.
+    dualAssign: ["combined", "special"],
   },
 };
 

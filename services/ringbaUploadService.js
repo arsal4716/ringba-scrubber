@@ -209,6 +209,63 @@ class RingbaUploadService {
       criteriaReplaced: replaced,
     };
   }
+
+  /**
+   * Multi-criteria flow: a single target with several bulkCriteria slots,
+   * each pointed at a DIFFERENT bulk tag.
+   *
+   * @param {{ targetId:string, assignments: Array<{name:string, numbers:string[]}> }} args
+   *   assignments[i] is uploaded as a bulk tag and assigned to the i-th
+   *   bulkCriteria slot (document order). Extra slots reuse the last tag.
+   */
+  async uploadAndAssignMulti({ targetId, assignments }) {
+    if (!targetId) throw new Error("uploadAndAssignMulti: targetId is required");
+    if (!Array.isArray(assignments) || !assignments.length) {
+      throw new Error("uploadAndAssignMulti: assignments are required");
+    }
+
+    // Upload each file as its own bulk tag.
+    const uploads = [];
+    for (const a of assignments) {
+      uploads.push(await this.uploadBulkTag(a.name, a.numbers));
+    }
+    const tagIds = uploads.map((u) => u.id);
+
+    const target = await this.getTarget(targetId);
+    if (!target || !target.id) throw new Error(`Target ${targetId} not found`);
+
+    const slots = (Array.isArray(target.criteria) ? target.criteria : [])
+      .map((c) => c && c.bulkCriteria)
+      .filter((bc) => bc && typeof bc === "object");
+
+    if (!slots.length) {
+      throw new Error(`Target ${targetId} has no bulkCriteria entry to update`);
+    }
+    if (slots.length !== tagIds.length) {
+      logger.warn(
+        `[ringbaUpload] Target ${targetId} has ${slots.length} bulkCriteria but ${tagIds.length} files — assigning by index`
+      );
+    }
+
+    slots.forEach((bc, i) => {
+      const tagId = tagIds[i] !== undefined ? tagIds[i] : tagIds[tagIds.length - 1];
+      if ("Id" in bc) bc.Id = tagId;
+      if ("id" in bc) bc.id = tagId;
+      if (!("id" in bc) && !("Id" in bc)) bc.id = tagId;
+    });
+
+    await this.patchTarget(targetId, target);
+
+    logger.info(
+      `[ringbaUpload] Target ${targetId} multi-assigned ${slots.length} criteria -> tags [${tagIds.join(", ")}]`
+    );
+
+    return {
+      bulkTagIds: tagIds,
+      tagCount: uploads.reduce((s, u) => s + (u.tagCount || 0), 0),
+      criteriaAssigned: slots.length,
+    };
+  }
 }
 
 module.exports = new RingbaUploadService();
