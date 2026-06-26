@@ -20,7 +20,10 @@ const logger = require("../utils/logger");
 const BASE_URL = (process.env.QC_API_BASE || "https://callcheckai.com/api").replace(/\/+$/, "");
 const EMAIL = process.env.QC_API_EMAIL || "";
 const PASSWORD = process.env.QC_API_PASSWORD || "";
-const TIMEOUT_MS = Number(process.env.QC_API_TIMEOUT_MS || 60000);
+const TIMEOUT_MS = Number(process.env.QC_API_TIMEOUT_MS || 120000);
+const MAX_RETRIES = Number(process.env.QC_API_MAX_RETRIES || 3);
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const http = axios.create({
   timeout: TIMEOUT_MS,
@@ -100,18 +103,37 @@ class QcToolsService {
         responseType: "text",
       });
 
+    // Retry transient failures (timeouts / 5xx / network) — large
+    // exports (e.g. ACA) occasionally time out and must not silently
+    // collapse the source to 0.
     let res;
-    try {
-      res = await doRequest(token);
-    } catch (err) {
-      // Token may have expired early — retry once with a fresh login.
-      if (err?.response?.status === 401) {
-        logger.warn("[qcTools] 401 on export, refreshing token and retrying");
-        token = await this.getToken(true);
+    let lastErr;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
         res = await doRequest(token);
-      } else {
-        throw err;
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const status = err?.response?.status;
+
+        if (status === 401) {
+          logger.warn("[qcTools] 401 on export, refreshing token and retrying");
+          token = await this.getToken(true);
+          continue;
+        }
+
+        if (attempt >= MAX_RETRIES) break;
+        const delay = 1500 * attempt;
+        logger.warn(
+          `[qcTools] export attempt ${attempt}/${MAX_RETRIES} failed (${status || err?.code || err?.message}); retrying in ${delay}ms`
+        );
+        await sleep(delay);
       }
+    }
+
+    if (!res) {
+      throw lastErr || new Error("QC export failed after retries");
     }
 
     const numbers = parseCallerIdsFromCsv(res.data);

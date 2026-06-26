@@ -208,12 +208,21 @@ async function buildSpecialTargetFiles(productKey, timezone, dateStr) {
       const days = (Number(spec.months) || 6) * 30;
       const dateRange = lastDaysRange(timezone, days);
 
-      const out = await ringbaService.fetchNumbersForCampaignChunked(
-        spec.search,
-        dateRange,
-        spec.callLengthMinSeconds || 0,
-        { chunkDays: 7, hasPayout: spec.paid === true }
-      );
+      // Fetch calls TO the specific target (targetName), filtered to
+      // long calls. Falls back to campaign search if no targetName set.
+      const out = spec.targetName
+        ? await ringbaService.fetchNumbersForTargetNameChunked(
+            spec.targetName,
+            dateRange,
+            spec.callLengthMinSeconds || 0,
+            { chunkDays: 7 }
+          )
+        : await ringbaService.fetchNumbersForCampaignChunked(
+            spec.search,
+            dateRange,
+            spec.callLengthMinSeconds || 0,
+            { chunkDays: 7, hasPayout: spec.paid === true }
+          );
 
       const normalized = (out.numbers || []).map(normalizePhone).filter(Boolean);
       const unique = deduplicateNumbers(normalized);
