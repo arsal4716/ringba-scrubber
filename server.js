@@ -26,6 +26,7 @@ const logger = require("./utils/logger");
   "uploads/dnc",
   "uploads/scrub-input",
   "uploads/scrub-output",
+  "uploads/reports",
 ].forEach((dir) => {
   fs.mkdirSync(path.join(__dirname, dir), { recursive: true });
 });

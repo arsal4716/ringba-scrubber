@@ -1,75 +1,81 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge } from 'react-bootstrap';
-import { FaPlay, FaFileExcel, FaExclamationTriangle } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, ProgressBar, Table } from 'react-bootstrap';
+import { FaPlay, FaFileExcel, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
 import API from '../services/api';
 
-// Yesterday as YYYY-MM-DD (UTC) — matches the report's default window.
 const yesterdayStr = () => {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 };
 
+const statusBadge = (s) => {
+  const map = { completed: 'success', processing: 'warning', queued: 'secondary', failed: 'danger' };
+  return <Badge bg={map[s] || 'secondary'} className="text-capitalize">{s}</Badge>;
+};
+
 const Kaliper = () => {
-  const [date, setDate] = useState(yesterdayStr());
-  const [running, setRunning] = useState(false);
+  const [startDate, setStartDate] = useState(yesterdayStr());
+  const [endDate, setEndDate] = useState(yesterdayStr());
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
-  const [summary, setSummary] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [active, setActive] = useState(null); // currently-tracked job
+  const pollRef = useRef(null);
 
-  const run = async () => {
-    setRunning(true);
-    setError('');
-    setSummary(null);
+  const loadJobs = async () => {
     try {
-      const resp = await API.post(
-        '/kaliper/run',
-        { date },
-        { responseType: 'blob', timeout: 1000 * 60 * 10 } // up to 10 min
-      );
-
-      // Parse the summary header if present.
-      try {
-        const hdr = resp.headers['x-kaliper-summary'];
-        if (hdr) setSummary(JSON.parse(hdr));
-      } catch { /* non-fatal */ }
-
-      // Trigger browser download from the returned blob.
-      const blob = new Blob([resp.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Suppressed_CallerIDs_${date}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      // Error responses come back as a blob — read it as text/JSON.
-      let msg = 'Run failed';
-      try {
-        const text = await err.response?.data?.text?.();
-        if (text) msg = JSON.parse(text).error || msg;
-      } catch {
-        msg = err.response?.statusText || err.message || msg;
-      }
-      setError(msg);
-    } finally {
-      setRunning(false);
+      const { data } = await API.get('/reports', { params: { type: 'kaliper' } });
+      const list = data.jobs || [];
+      setJobs(list);
+      // Resume tracking any in-flight job (reload-safe).
+      const running = list.find((j) => j.status === 'processing' || j.status === 'queued');
+      if (running && (!active || active._id !== running._id)) startPolling(running._id);
+      return list;
+    } catch {
+      return [];
     }
   };
 
-  const stat = (label, value, color = 'primary') => (
-    <Col xs={6} md={4} className="mb-3">
-      <Card className="text-center h-100">
-        <Card.Body className="py-3">
-          <div className={`fw-bold fs-4 text-${color}`}>{(value ?? 0).toLocaleString()}</div>
-          <div className="text-muted small">{label}</div>
-        </Card.Body>
-      </Card>
-    </Col>
-  );
+  const startPolling = (jobId) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const tick = async () => {
+      try {
+        const { data } = await API.get(`/reports/${jobId}`);
+        setActive(data);
+        if (data.status === 'completed' || data.status === 'failed') {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          loadJobs();
+        }
+      } catch { /* keep polling */ }
+    };
+    tick();
+    pollRef.current = setInterval(tick, 1500);
+  };
+
+  useEffect(() => {
+    loadJobs();
+    return () => pollRef.current && clearInterval(pollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const run = async () => {
+    setStarting(true);
+    setError('');
+    try {
+      const { data } = await API.post('/reports/run', { type: 'kaliper', startDate, endDate });
+      await loadJobs();
+      startPolling(data.jobId);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to start');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const downloadUrl = (id) => `${API.defaults.baseURL}/reports/${id}/download`;
+  const isBusy = active && (active.status === 'processing' || active.status === 'queued');
 
   return (
     <Container className="mt-5">
@@ -81,42 +87,26 @@ const Kaliper = () => {
       <Card className="mb-4">
         <Card.Body>
           <p className="text-muted">
-            Pulls suppressed caller IDs directly from the Kaliper MCP server
-            (LeadMarket “CallerId Blocked” + HealthConnect “phs_suppressed”),
-            then downloads an Excel workbook with per-buyer sheets, a summary,
-            and the overlap list.
+            Pulls suppressed caller IDs from Kaliper (LeadMarket “CallerId Blocked”
+            + HealthConnect “phs_suppressed”) for a custom date range and builds a
+            downloadable Excel workbook. You can leave this page — the file stays
+            available below once it’s ready.
           </p>
           <Row className="g-3 align-items-end">
-            <Col md={4}>
-              <Form.Label className="fw-semibold small">Report date</Form.Label>
-              <Form.Control
-                type="date"
-                value={date}
-                max={yesterdayStr()}
-                onChange={(e) => setDate(e.target.value)}
-                disabled={running}
-              />
-              <Form.Text className="text-muted">
-                Window: {date} 04:00 UTC → next day 04:00 UTC (ET midnight-to-midnight)
-              </Form.Text>
+            <Col md={3}>
+              <Form.Label className="fw-semibold small">Start date</Form.Label>
+              <Form.Control type="date" value={startDate} max={endDate} onChange={(e) => setStartDate(e.target.value)} disabled={isBusy} />
             </Col>
-            <Col md={4}>
-              <Button variant="success" size="lg" onClick={run} disabled={running}>
-                {running ? (
-                  <><Spinner size="sm" className="me-2" />Running…</>
-                ) : (
-                  <><FaPlay className="me-2" />Run Now</>
-                )}
+            <Col md={3}>
+              <Form.Label className="fw-semibold small">End date</Form.Label>
+              <Form.Control type="date" value={endDate} min={startDate} max={yesterdayStr()} onChange={(e) => setEndDate(e.target.value)} disabled={isBusy} />
+            </Col>
+            <Col md={3}>
+              <Button variant="success" size="lg" onClick={run} disabled={starting || isBusy}>
+                {starting ? <><Spinner size="sm" className="me-2" />Starting…</> : <><FaPlay className="me-2" />Run Now</>}
               </Button>
             </Col>
           </Row>
-
-          {running && (
-            <Alert variant="info" className="mt-3 mb-0 small">
-              Fetching from Kaliper and building the workbook — this can take a
-              minute for busy days. The file downloads automatically when done.
-            </Alert>
-          )}
 
           {error && (
             <Alert variant="danger" className="mt-3 mb-0 d-flex align-items-center">
@@ -126,24 +116,77 @@ const Kaliper = () => {
         </Card.Body>
       </Card>
 
-      {summary && (
-        <Card>
+      {/* ── Live progress for the tracked job ─────────────────── */}
+      {active && isBusy && (
+        <Card className="mb-4 border-warning">
           <Card.Body>
-            <div className="d-flex align-items-center mb-3">
-              <Card.Title className="mb-0">Last run</Card.Title>
-              <Badge bg="success" className="ms-2">Downloaded</Badge>
+            <div className="d-flex justify-content-between mb-2">
+              <span className="fw-semibold">{active.label || 'Running…'}</span>
+              <span className="text-muted small">{active.phase || 'Working…'}</span>
             </div>
-            <Row>
-              {stat('LeadMarket rows', summary.lmRows, 'primary')}
-              {stat('LeadMarket unique', summary.lmUnique, 'info')}
-              {stat('HealthConnect rows', summary.hcRows, 'success')}
-              {stat('HealthConnect unique', summary.hcUnique, 'info')}
-              {stat('Overlap (both lists)', summary.overlap, 'warning')}
-              {stat('Pings scanned', (summary.lmPingsScanned || 0) + (summary.hcPingsScanned || 0), 'secondary')}
-            </Row>
+            <ProgressBar
+              now={active.percent || 0}
+              label={`${active.percent || 0}%`}
+              animated
+              striped
+              variant="warning"
+            />
+            <div className="text-muted small mt-2">
+              {(active.fetched || 0).toLocaleString()} records fetched so far — you can safely leave this page.
+            </div>
           </Card.Body>
         </Card>
       )}
+
+      {/* ── History / downloads ───────────────────────────────── */}
+      <Card>
+        <Card.Body>
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <Card.Title className="mb-0">Generated files</Card.Title>
+            <Button variant="outline-secondary" size="sm" onClick={loadJobs}>
+              <FaSyncAlt className="me-1" />Refresh
+            </Button>
+          </div>
+          {jobs.length === 0 ? (
+            <p className="text-muted mb-0">No reports yet. Pick a date range and hit Run Now.</p>
+          ) : (
+            <Table striped hover responsive size="sm" className="align-middle">
+              <thead>
+                <tr>
+                  <th>Report</th>
+                  <th className="text-center">Status</th>
+                  <th className="text-center">Records</th>
+                  <th>Fetched</th>
+                  <th className="text-center">Download</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((j) => (
+                  <tr key={j._id}>
+                    <td>
+                      <div className="fw-semibold">{j.label}</div>
+                      {j.status === 'failed' && <div className="text-danger small">{j.error}</div>}
+                      {j.status === 'processing' && <div className="text-muted small">{j.phase} · {j.percent || 0}%</div>}
+                    </td>
+                    <td className="text-center">{statusBadge(j.status)}</td>
+                    <td className="text-center">{(j.recordCount || 0).toLocaleString()}</td>
+                    <td className="small text-muted">{j.completedAt ? new Date(j.completedAt).toLocaleString() : '—'}</td>
+                    <td className="text-center">
+                      {j.status === 'completed' && j.fileName ? (
+                        <a href={downloadUrl(j._id)} className="btn btn-sm btn-outline-success" title={j.fileName}>
+                          <FaFileDownload />
+                        </a>
+                      ) : (
+                        <span className="text-muted small">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card.Body>
+      </Card>
     </Container>
   );
 };
