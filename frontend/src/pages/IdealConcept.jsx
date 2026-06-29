@@ -3,7 +3,8 @@ import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, Progres
 import { FaPlay, FaPhoneAlt, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
 import API from '../services/api';
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// "Today" in Eastern time (YYYY-MM-DD) so the picker matches EST, not UTC.
+const todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
 const statusBadge = (s) => {
   const map = { completed: 'success', processing: 'warning', queued: 'secondary', failed: 'danger' };
