@@ -255,6 +255,15 @@ class RingbaService {
     this._validateDateRange(dateRange);
 
     const chunkDays = Math.max(1, Number(opts.chunkDays || 1));
+    const comparisonType = opts.comparisonType || "EQUALS";
+
+    // Total chunks (for progress reporting).
+    const msPerChunk = chunkDays * 24 * 60 * 60 * 1000;
+    const totalChunks = Math.max(
+      1,
+      Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / msPerChunk) + 1
+    );
+    let chunkIdx = 0;
 
     const all = [];
     let curStart = new Date(dateRange.startDate);
@@ -269,7 +278,7 @@ class RingbaService {
         this._group({
           column: "targetName",
           value: targetName,
-          comparisonType: "EQUALS",
+          comparisonType,
         }),
       ];
 
@@ -321,6 +330,11 @@ class RingbaService {
         }
         const num = normalizePhone(rec?.inboundPhoneNumber);
         if (num) all.push(num);
+      }
+
+      chunkIdx++;
+      if (typeof opts.onChunk === "function") {
+        opts.onChunk(chunkIdx, totalChunks, all.length);
       }
 
       curStart = new Date(curEnd.getTime() + 1);

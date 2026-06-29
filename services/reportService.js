@@ -5,6 +5,7 @@ const fs = require("fs");
 
 const ReportJob = require("../models/ReportJob");
 const kaliperService = require("./kaliperService");
+const idealConceptService = require("./idealConceptService");
 const logger = require("../utils/logger");
 
 const REPORTS_DIR = path.join(__dirname, "../uploads/reports");
@@ -83,6 +84,11 @@ class ReportService {
         buffer = res.buffer;
         summary = res.summary || {};
         baseName = `Kaliper_Suppressed_CallerIDs_${job.params.startDate}_to_${job.params.endDate}.xlsx`;
+      } else if (job.type === "idealconcept") {
+        const res = await idealConceptService.runIdealConceptReport({ ...job.params, onProgress });
+        buffer = res.buffer;
+        summary = res.summary || {};
+        baseName = `IdealConcept_CallerIDs_${job.params.startDate}_to_${job.params.endDate}.xlsx`;
       } else {
         throw new Error(`Unknown report type: ${job.type}`);
       }
