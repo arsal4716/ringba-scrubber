@@ -27,6 +27,12 @@ const CG_CAMPAIGN_IDS = (process.env.IDEALCONCEPT_CALLGRID_CAMPAIGN_IDS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+// Keep only "Rejected - Duplicate" records (default). The duplicate result
+// is a CallGrid signal; Ringba call logs don't expose it, so Ringba is
+// excluded while this is on (set IDEALCONCEPT_DUPLICATE_ONLY=false to grab
+// all caller IDs from both sources again).
+const DUPLICATE_ONLY = (process.env.IDEALCONCEPT_DUPLICATE_ONLY || "true") !== "false";
+
 function fmtPhone(national10) {
   const d = String(national10 || "");
   if (d.length === 10) return `+1 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
@@ -45,20 +51,28 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
   };
 
   // ── Ringba (≈2–50%) — caller IDs where targetName CONTAINS the term ──
-  report(2, "Fetching Ringba…", 0);
-  const ringbaRes = await ringbaService.fetchNumbersForTargetNameChunked(
-    RINGBA_SEARCH,
-    { startDate: new Date(dateFrom), endDate: new Date(dateTo) },
-    0,
-    {
-      chunkDays: 1,
-      comparisonType: "CONTAINS",
-      onChunk: (i, total, fetched) =>
-        report(Math.round((i / total) * 48), `Ringba ${i}/${total} chunks`, fetched),
-    }
-  );
-  const ringbaSet = new Set((ringbaRes.numbers || []).map(toNational10).filter(Boolean));
-  logger.info(`[idealConcept] Ringba unique=${ringbaSet.size}`);
+  // Skipped while DUPLICATE_ONLY: the Ringba call-log has no duplicate
+  // rejection field, so we can't honor "Rejected - Duplicate" there.
+  let ringbaSet = new Set();
+  if (DUPLICATE_ONLY) {
+    logger.info("[idealConcept] DUPLICATE_ONLY on — skipping Ringba (no duplicate field in call logs)");
+    report(48, "Skipping Ringba (duplicate-only)…", 0);
+  } else {
+    report(2, "Fetching Ringba…", 0);
+    const ringbaRes = await ringbaService.fetchNumbersForTargetNameChunked(
+      RINGBA_SEARCH,
+      { startDate: new Date(dateFrom), endDate: new Date(dateTo) },
+      0,
+      {
+        chunkDays: 1,
+        comparisonType: "CONTAINS",
+        onChunk: (i, total, fetched) =>
+          report(Math.round((i / total) * 48), `Ringba ${i}/${total} chunks`, fetched),
+      }
+    );
+    ringbaSet = new Set((ringbaRes.numbers || []).map(toNational10).filter(Boolean));
+    logger.info(`[idealConcept] Ringba unique=${ringbaSet.size}`);
+  }
 
   // ── CallGrid (≈50–92%) ──
   report(50, "Fetching CallGrid…", ringbaSet.size);
@@ -70,9 +84,13 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
       report(Math.min(92, 50 + page * 3), `CallGrid page ${page}`, ringbaSet.size + fetched),
   });
   // If we couldn't filter server-side by campaign id, filter by name here.
-  const cgFiltered = CG_CAMPAIGN_IDS.length ? cgRows : cgRows.filter(nameMatches);
+  let cgFiltered = CG_CAMPAIGN_IDS.length ? cgRows : cgRows.filter(nameMatches);
+  // Keep only "Rejected - Duplicate" records when duplicate-only is on.
+  if (DUPLICATE_ONLY) cgFiltered = cgFiltered.filter((r) => r.duplicate);
   const cgSet = new Set(cgFiltered.map((r) => toNational10(r.number)).filter(Boolean));
-  logger.info(`[idealConcept] CallGrid rows=${cgRows.length} matched=${cgFiltered.length} unique=${cgSet.size}`);
+  logger.info(
+    `[idealConcept] CallGrid rows=${cgRows.length} matched=${cgFiltered.length} unique=${cgSet.size} duplicateOnly=${DUPLICATE_ONLY}`
+  );
 
   // ── Union + build workbook (≈95%) ──
   report(95, "Building workbook…", ringbaSet.size + cgSet.size);
@@ -97,8 +115,9 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
 
   const summaryAoa = [
     ["Metric", "Value"],
-    ["Date range", startDate === endDate ? startDate : `${startDate} → ${endDate}`],
-    ["Ringba search (targetName contains)", RINGBA_SEARCH],
+    ["Date range (Eastern)", startDate === endDate ? startDate : `${startDate} → ${endDate}`],
+    ["Filter", DUPLICATE_ONLY ? "Rejected - Duplicate only" : "All caller IDs"],
+    ["Ringba search (targetName contains)", DUPLICATE_ONLY ? "(skipped — duplicate-only)" : RINGBA_SEARCH],
     ["CallGrid filter", CG_CAMPAIGN_IDS.length ? `campaignIds (${CG_CAMPAIGN_IDS.length})` : `name contains "${NAME_CONTAINS}"`],
     ["Ringba unique caller IDs", ringbaSet.size],
     ["CallGrid unique caller IDs", cgSet.size],

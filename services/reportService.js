@@ -2,6 +2,7 @@
 
 const path = require("path");
 const fs = require("fs");
+const moment = require("moment-timezone");
 
 const ReportJob = require("../models/ReportJob");
 const kaliperService = require("./kaliperService");
@@ -10,14 +11,17 @@ const logger = require("../utils/logger");
 
 const REPORTS_DIR = path.join(__dirname, "../uploads/reports");
 
-// Build the [from, to) ISO window for a YYYY-MM-DD range. Matches Kaliper's
-// ET-midnight boundaries: start 04:00Z → (end + 1 day) 04:00Z.
+// Eastern time for ALL report date filtering (Kaliper + IdealConcept).
+// America/New_York handles EST/EDT automatically and matches CallGrid's
+// reportTimeZone ("US/Eastern"), so every source uses the same boundaries.
+const REPORT_TZ = "America/New_York";
+
+// Build the [from, to] ISO window for a YYYY-MM-DD range, using Eastern
+// start-of-day → end-of-day.
 function windowForRange(startDate, endDate) {
-  const from = `${startDate}T04:00:00.000Z`;
-  const next = new Date(`${endDate}T00:00:00.000Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  const to = `${next.toISOString().slice(0, 10)}T04:00:00.000Z`;
-  return { dateFrom: from, dateTo: to };
+  const dateFrom = moment.tz(startDate, "YYYY-MM-DD", REPORT_TZ).startOf("day").toISOString();
+  const dateTo = moment.tz(endDate, "YYYY-MM-DD", REPORT_TZ).endOf("day").toISOString();
+  return { dateFrom, dateTo };
 }
 
 function buildLabel(type, startDate, endDate) {
