@@ -31,6 +31,10 @@ const logger = require("../utils/logger");
 
 let scheduledTask = null;
 
+// Suppression file names / run dates use Eastern time, not the job's
+// scheduling timezone (e.g. Asia/Karachi).
+const FILE_DATE_TZ = "America/New_York";
+
 function buildCronExpr(runTime, timezone) {
   const tzMoment = moment.tz(runTime, timezone);
   const minute = tzMoment.minute();
@@ -504,8 +508,9 @@ const executeFetch = async (timezone) => {
   await jobService.startJob(jobId);
 
   try {
-    const dateStr = moment.tz(timezone).format("DD MMM");
-    const runId = `${moment.tz(timezone).format("YYYY-MM-DD")}-${Date.now()}`;
+    // File/report dates are always Eastern, regardless of the job timezone.
+    const dateStr = moment.tz(FILE_DATE_TZ).format("DD MMM");
+    const runId = `${moment.tz(FILE_DATE_TZ).format("YYYY-MM-DD")}-${Date.now()}`;
 
     logger.info(`[executeFetch] Starting products=[${ACTIVE_PRODUCTS.join(", ")}] runId=${runId}`);
 
