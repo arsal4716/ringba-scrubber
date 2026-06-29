@@ -3,11 +3,8 @@ import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, Progres
 import { FaPlay, FaFileExcel, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
 import API from '../services/api';
 
-const yesterdayStr = () => {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-};
+// "Today" in Eastern time (YYYY-MM-DD) so the picker matches EST, not UTC.
+const estToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
 const statusBadge = (s) => {
   const map = { completed: 'success', processing: 'warning', queued: 'secondary', failed: 'danger' };
@@ -15,8 +12,8 @@ const statusBadge = (s) => {
 };
 
 const Kaliper = () => {
-  const [startDate, setStartDate] = useState(yesterdayStr());
-  const [endDate, setEndDate] = useState(yesterdayStr());
+  const [startDate, setStartDate] = useState(estToday());
+  const [endDate, setEndDate] = useState(estToday());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [jobs, setJobs] = useState([]);
@@ -99,7 +96,7 @@ const Kaliper = () => {
             </Col>
             <Col md={3}>
               <Form.Label className="fw-semibold small">End date</Form.Label>
-              <Form.Control type="date" value={endDate} min={startDate} max={yesterdayStr()} onChange={(e) => setEndDate(e.target.value)} disabled={isBusy} />
+              <Form.Control type="date" value={endDate} min={startDate} max={estToday()} onChange={(e) => setEndDate(e.target.value)} disabled={isBusy} />
             </Col>
             <Col md={3}>
               <Button variant="success" size="lg" onClick={run} disabled={starting || isBusy}>

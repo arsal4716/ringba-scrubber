@@ -416,6 +416,72 @@ class RingbaService {
     return { numbers: all, fetchedCount: all.length, totalCount: null };
   }
 
+  /**
+   * Fetch call-log RECORDS where targetName matches (CONTAINS by default),
+   * including isDuplicate so callers can filter duplicates client-side.
+   * Returns [{ number, isDuplicate, targetName, campaignName, callDt }].
+   */
+  async fetchCallLogsByTargetName(searchTerm, dateRange, opts = {}) {
+    if (!searchTerm) throw new Error("searchTerm is required");
+    this._validateDateRange(dateRange);
+
+    const chunkDays = Math.max(1, Number(opts.chunkDays || 7));
+    const comparisonType = opts.comparisonType || "CONTAINS";
+    const msPerChunk = chunkDays * 24 * 60 * 60 * 1000;
+    const totalChunks = Math.max(
+      1,
+      Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / msPerChunk) + 1
+    );
+    let chunkIdx = 0;
+
+    const out = [];
+    let curStart = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+
+    const valueColumns = [
+      { column: "inboundPhoneNumber" },
+      { column: "isDuplicate" },
+      { column: "targetName" },
+      { column: "campaignName" },
+      { column: "callDt" },
+    ];
+
+    while (curStart <= end) {
+      const curEnd = new Date(curStart);
+      curEnd.setUTCDate(curEnd.getUTCDate() + chunkDays);
+      if (curEnd > end) curEnd.setTime(end.getTime());
+
+      const filters = [this._group({ column: "targetName", value: searchTerm, comparisonType })];
+
+      const { records } = await this.fetchReportPaged({
+        reportStart: curStart,
+        reportEnd: curEnd,
+        valueColumns,
+        filters,
+        size: Number(opts.size || process.env.RINGBA_PAGE_SIZE || 1000),
+      });
+
+      for (const r of records) {
+        const num = normalizePhone(r?.inboundPhoneNumber);
+        if (!num) continue;
+        out.push({
+          number: num,
+          isDuplicate: r?.isDuplicate === true,
+          targetName: r?.targetName || "",
+          campaignName: r?.campaignName || "",
+          callDt: r?.callDt || null,
+        });
+      }
+
+      chunkIdx++;
+      if (typeof opts.onChunk === "function") opts.onChunk(chunkIdx, totalChunks, out.length);
+
+      curStart = new Date(curEnd.getTime() + 1);
+    }
+
+    return out;
+  }
+
   async _fetchReportPage({ reportStart, reportEnd, valueColumns, filters, size, offset }) {
     const body = {
       reportStart: reportStart.toISOString(),
