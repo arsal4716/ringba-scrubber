@@ -19,6 +19,7 @@ const ringbaService = require("./ringbaService");
 const callGridService = require("./callGridService");
 const salesradixService = require("./salesradixService");
 const { toNational10 } = require("../utils/phoneNormalizer");
+const { stateForNumber } = require("../utils/areaCodeState");
 const logger = require("../utils/logger");
 
 const RINGBA_SEARCH = process.env.IDEALCONCEPT_RINGBA_SEARCH || "IdealConcept";
@@ -79,6 +80,15 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
   const cgSet = new Set(cgScoped.map((r) => toNational10(r.number)).filter(Boolean));
   logger.info(`[idealConcept] CallGrid rows=${cgRows.length} scoped=${cgScoped.length} unique=${cgSet.size}`);
 
+  // ── Per-number state: CallGrid's real InboundStateCode, else derived from
+  //    the area code (same as Ringba's InboundNumber:State). ──
+  const stateMap = new Map();
+  for (const r of cgScoped) {
+    const n = toNational10(r.number);
+    if (n && r.state && !stateMap.has(n)) stateMap.set(n, String(r.state).toUpperCase());
+  }
+  const stateFor = (n) => stateMap.get(n) || stateForNumber(n) || undefined;
+
   // ── Union of all unique caller IDs ──
   const union = new Set([...ringbaSet, ...cgSet]);
   const uniqueList = [...union];
@@ -90,14 +100,17 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
   // ── SalesRadix availability check (≈45–95%) — keep "Rejected - Duplicate" ──
   let dupSet = new Set();
   let apiResults = new Map();
+  let apiStates = new Map();
   if (DUPLICATE_ONLY) {
     report(45, `Checking ${uniqueList.length} numbers via SalesRadix…`, uniqueList.length);
     const res = await salesradixService.checkBatch(uniqueList, {
+      stateFor,
       onProgress: (done, total) =>
         report(45 + Math.round((done / total) * 50), `SalesRadix ${done}/${total}`, done),
     });
     dupSet = res.dupSet;
     apiResults = res.results;
+    apiStates = res.states;
   }
 
   const kept = DUPLICATE_ONLY ? uniqueList.filter((n) => dupSet.has(n)) : uniqueList;
@@ -122,11 +135,17 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
   const detailSorted = [...uniqueList].sort();
   const detailRows = detailSorted.slice(0, DETAIL_CAP);
   const detailAoa = [
-    ["Caller ID", "Source", "SalesRadix result", "Kept (duplicate)?"],
-    ...detailRows.map((n) => [n, sourceOf(n), DUPLICATE_ONLY ? apiResults.get(n) || "" : "(filter off)", dupSet.has(n) ? "YES" : "no"]),
+    ["Caller ID", "Source", "State", "SalesRadix result", "Kept (duplicate)?"],
+    ...detailRows.map((n) => [
+      n,
+      sourceOf(n),
+      DUPLICATE_ONLY ? apiStates.get(n) || stateFor(n) || "" : stateFor(n) || "",
+      DUPLICATE_ONLY ? apiResults.get(n) || "" : "(filter off)",
+      dupSet.has(n) ? "YES" : "no",
+    ]),
   ];
   const wsDetail = XLSX.utils.aoa_to_sheet(detailAoa);
-  wsDetail["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 26 }, { wch: 16 }];
+  wsDetail["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 26 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, wsDetail, "Detail (filter check)");
 
   // Sheet 3 — Summary.

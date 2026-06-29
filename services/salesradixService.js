@@ -123,20 +123,24 @@ async function checkNumber(phone, state) {
 
 /**
  * @param {string[]} numbers
- * @param {{ state?:string, onProgress?:(done:number,total:number)=>void }} opts
- * @returns {Promise<{ dupSet:Set<string>, results:Map<string,string> }>}
+ * @param {{ state?:string, stateFor?:(n:string)=>string, onProgress?:(done:number,total:number)=>void }} opts
+ *   stateFor(number) returns that number's 2-letter state (overrides `state`).
+ * @returns {Promise<{ dupSet:Set<string>, results:Map<string,string>, states:Map<string,string> }>}
  */
-async function checkBatch(numbers, { state, onProgress } = {}) {
+async function checkBatch(numbers, { state, stateFor, onProgress } = {}) {
   const unique = [...new Set((numbers || []).filter(Boolean))];
   const dupSet = new Set();
   const results = new Map();
+  const states = new Map();
   let done = 0;
   let errors = 0;
 
   await Promise.all(
     unique.map((n) =>
       pool.run(async () => {
-        const r = await _check(n, state);
+        const st = (typeof stateFor === "function" ? stateFor(n) : state) || STATE;
+        states.set(n, st);
+        const r = await _check(n, st);
         results.set(n, r.result);
         if (!r.ok) errors++;
         if (r.isDup) dupSet.add(n);
@@ -149,7 +153,7 @@ async function checkBatch(numbers, { state, onProgress } = {}) {
   );
 
   logger.info(`[salesradix] checked=${unique.length} duplicates=${dupSet.size} errors=${errors}`);
-  return { dupSet, results };
+  return { dupSet, results, states };
 }
 
 module.exports = { checkNumber, checkBatch };
