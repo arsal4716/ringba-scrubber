@@ -18,6 +18,14 @@ const fileService = require("../services/fileService");
 const { PRODUCTS, ACTIVE_PRODUCTS, SPECIAL_TARGETS } = require("../config/constants");
 const { filterDNC } = require("../utils/dncFilter");
 const { deduplicateNumbers } = require("../utils/dedupHelper");
+const { toStorageFormat } = require("../utils/phoneNormalizer");
+
+// Ringba's InboundNumber:Number-NoPlus matching expects 11-digit numbers
+// (leading country code, no "+"), e.g. 12102091116 — the same format the
+// TXT file uses. Convert + dedupe a list to that format for bulk-tag upload.
+function toRingbaNumbers(arr) {
+  return [...new Set((arr || []).map(toStorageFormat).filter(Boolean))];
+}
 const { getTodayInTimezone } = require("../utils/dateHelpers");
 const logger = require("../utils/logger");
 
@@ -375,8 +383,8 @@ async function uploadToTargets(productKey, numbers, fileName, dateStr, specialFi
     // other, per spec.dualAssign order.
     if (special && spec && Array.isArray(spec.dualAssign) && spec.dualAssign.length) {
       const sourceMap = {
-        combined: { name: fileName || `${dateStr} – ${productKey}.txt`, numbers },
-        special: { name: special.fileName, numbers: special.numbers },
+        combined: { name: fileName || `${dateStr} – ${productKey}.txt`, numbers: toRingbaNumbers(numbers) },
+        special: { name: special.fileName, numbers: toRingbaNumbers(special.numbers) },
       };
       const assignments = spec.dualAssign
         .map((k) => sourceMap[k])
@@ -410,8 +418,9 @@ async function uploadToTargets(productKey, numbers, fileName, dateStr, specialFi
     }
 
     // Single-file targets: special ones get their own file/number list;
-    // everyone else gets the standard combined product file.
-    const useNumbers = special ? special.numbers : numbers;
+    // everyone else gets the standard combined product file. Convert to
+    // Ringba's 11-digit format for the bulk tag.
+    const useNumbers = toRingbaNumbers(special ? special.numbers : numbers);
     const bulkTagName =
       (special && special.fileName) ||
       fileName ||
