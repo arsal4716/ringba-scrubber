@@ -200,6 +200,29 @@ class CallGridService {
    * @param {{ startDate:string, endDate:string, campaignIds?:string[], onPage?:Function }} opts
    * @returns {Promise<Array<{number:string, destinationName:string, sourceName:string, campaignName:string, createdAt:string}>>}
    */
+  // Does this CallGrid call row represent a duplicate rejection?
+  // Robust to the unknown field: checks explicit flags first, then scans
+  // likely outcome fields, then any string value, for "duplicate".
+  _looksDuplicate(row) {
+    if (!row || typeof row !== "object") return false;
+    if (row.duplicate === 1 || row.duplicate === true || row.Duplicate === true) return true;
+
+    const candidates = [
+      "outcome", "Outcome", "result", "Result", "status", "Status",
+      "callStatus", "CallStatus", "disposition", "Disposition",
+      "buyerResponse", "response", "rejectReason", "RejectReason",
+    ];
+    for (const f of candidates) {
+      if (typeof row[f] === "string" && /duplicate/i.test(row[f])) return true;
+    }
+    // Last resort: scan all string values (catches "Rejected - Duplicate"
+    // wherever CallGrid actually puts it).
+    for (const v of Object.values(row)) {
+      if (typeof v === "string" && /duplicate/i.test(v)) return true;
+    }
+    return false;
+  }
+
   async fetchCallsForReport({ startDate, endDate, campaignIds = [], onPage } = {}) {
     if (!this.isConfigured()) {
       logger.warn("[callGrid] Not configured — skipping IdealConcept fetch");
@@ -250,6 +273,7 @@ class CallGridService {
           sourceName: row.SourceName || "",
           campaignName: row.CampaignName || "",
           createdAt: row.createdAt || row.UTCISODate || "",
+          duplicate: this._looksDuplicate(row),
         });
       }
 
@@ -257,7 +281,8 @@ class CallGridService {
       if (rows.length < PAGE_SIZE) break;
     }
 
-    logger.info(`[callGrid] IdealConcept fetch rows=${out.length} (${startDate}..${endDate})`);
+    const dupCount = out.filter((r) => r.duplicate).length;
+    logger.info(`[callGrid] IdealConcept fetch rows=${out.length} duplicates=${dupCount} (${startDate}..${endDate})`);
     return out;
   }
 }
