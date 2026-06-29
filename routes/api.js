@@ -33,6 +33,13 @@ const {
 
 const { runKaliper } = require("../controllers/kaliperController");
 
+const {
+  runReport,
+  listReports,
+  getReport,
+  downloadReport,
+} = require("../controllers/reportController");
+
 // ─── Schedule (existing) ──────────────────────────────────────
 router.get("/schedule", getSchedule);
 router.post("/schedule", saveSchedule);
@@ -65,6 +72,12 @@ router.delete("/targets/:id", deleteTarget);
 
 // ─── Kaliper - Suppressed CallerID report (NEW) ───────────────
 router.post("/kaliper/run", runKaliper);
+
+// ─── Background report jobs (Kaliper / IdealConcept) ──────────
+router.post("/reports/run", runReport);
+router.get("/reports", listReports);
+router.get("/reports/:id", getReport);
+router.get("/reports/:id/download", downloadReport);
 
 // ─── Publisher - Scrub workflow (NEW) ─────────────────────────
 router.post("/publisher/verify", verifyPublisher);

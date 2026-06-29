@@ -190,6 +190,76 @@ class CallGridService {
       return { numbers, skipped: true, reason: err?.message || "error" };
     }
   }
+
+  /**
+   * Fetch raw call rows for a date range (for the IdealConcept report).
+   * Optionally filters by campaign ids server-side; always returns the
+   * caller number plus the name fields so the caller can filter by
+   * destination/source/campaign name client-side.
+   *
+   * @param {{ startDate:string, endDate:string, campaignIds?:string[], onPage?:Function }} opts
+   * @returns {Promise<Array<{number:string, destinationName:string, sourceName:string, campaignName:string, createdAt:string}>>}
+   */
+  async fetchCallsForReport({ startDate, endDate, campaignIds = [], onPage } = {}) {
+    if (!this.isConfigured()) {
+      logger.warn("[callGrid] Not configured — skipping IdealConcept fetch");
+      return [];
+    }
+
+    const rules = [];
+    if (Array.isArray(campaignIds) && campaignIds.length) {
+      rules.push({
+        tagName: "CampaignName",
+        values: campaignIds,
+        condition: "equals",
+        customOptions: [],
+        labelMap: {},
+      });
+    }
+    const filters = rules.length ? { items: [{ operator: "AND", rules }] } : { items: [] };
+
+    const out = [];
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const body = {
+        startDate,
+        endDate,
+        filters,
+        permission: "",
+        page,
+        maxItems: PAGE_SIZE,
+        sortColumn: "createdAt",
+        sortDirection: "desc",
+        reportTimeZone: REPORT_TZ,
+        outcomes: [],
+        isSortFieldTag: false,
+        useCursor: false,
+      };
+
+      const res = await http.post(`${BASE_URL}/call`, body, {
+        params: { organizationId: ORG_ID },
+        headers: { Authorization: `Bearer ${TOKEN}`, Accept: "application/json", "Content-Type": "application/json" },
+      });
+
+      const rows = extractRows(res?.data);
+      for (const row of rows) {
+        const num = extractNumber(row);
+        if (!num) continue;
+        out.push({
+          number: String(num),
+          destinationName: row.DestinationName || "",
+          sourceName: row.SourceName || "",
+          campaignName: row.CampaignName || "",
+          createdAt: row.createdAt || row.UTCISODate || "",
+        });
+      }
+
+      if (typeof onPage === "function") onPage(page + 1, out.length);
+      if (rows.length < PAGE_SIZE) break;
+    }
+
+    logger.info(`[callGrid] IdealConcept fetch rows=${out.length} (${startDate}..${endDate})`);
+    return out;
+  }
 }
 
 module.exports = new CallGridService();

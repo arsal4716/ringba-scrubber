@@ -1,36 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, ProgressBar, Table } from 'react-bootstrap';
-import { FaPlay, FaFileExcel, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
+import { FaPlay, FaPhoneAlt, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
 import API from '../services/api';
 
-const yesterdayStr = () => {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-};
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 const statusBadge = (s) => {
   const map = { completed: 'success', processing: 'warning', queued: 'secondary', failed: 'danger' };
   return <Badge bg={map[s] || 'secondary'} className="text-capitalize">{s}</Badge>;
 };
 
-const Kaliper = () => {
-  const [startDate, setStartDate] = useState(yesterdayStr());
-  const [endDate, setEndDate] = useState(yesterdayStr());
+const IdealConcept = () => {
+  const [startDate, setStartDate] = useState(todayStr());
+  const [endDate, setEndDate] = useState(todayStr());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [jobs, setJobs] = useState([]);
-  const [active, setActive] = useState(null); // currently-tracked job
+  const [active, setActive] = useState(null);
   const pollRef = useRef(null);
 
   const loadJobs = async () => {
     try {
-      const { data } = await API.get('/reports', { params: { type: 'kaliper' } });
+      const { data } = await API.get('/reports', { params: { type: 'idealconcept' } });
       const list = data.jobs || [];
       setJobs(list);
-      // Resume tracking any in-flight job (reload-safe).
       const running = list.find((j) => j.status === 'processing' || j.status === 'queued');
-      if (running && (!active || active._id !== running._id)) startPolling(running._id);
+      if (running) startPolling(running._id);
       return list;
     } catch {
       return [];
@@ -64,7 +59,7 @@ const Kaliper = () => {
     setStarting(true);
     setError('');
     try {
-      const { data } = await API.post('/reports/run', { type: 'kaliper', startDate, endDate });
+      const { data } = await API.post('/reports/run', { type: 'idealconcept', startDate, endDate });
       await loadJobs();
       startPolling(data.jobId);
     } catch (err) {
@@ -80,17 +75,17 @@ const Kaliper = () => {
   return (
     <Container className="mt-5">
       <div className="d-flex align-items-center mb-4">
-        <FaFileExcel size={26} className="text-success me-2" />
-        <h2 className="fw-bold mb-0">Kaliper — Suppressed CallerIDs</h2>
+        <FaPhoneAlt size={24} className="text-primary me-2" />
+        <h2 className="fw-bold mb-0">IdealConcept — Unique CallerIDs</h2>
       </div>
 
       <Card className="mb-4">
         <Card.Body>
           <p className="text-muted">
-            Pulls suppressed caller IDs from Kaliper (LeadMarket “CallerId Blocked”
-            + HealthConnect “phs_suppressed”) for a custom date range and builds a
-            downloadable Excel workbook. You can leave this page — the file stays
-            available below once it’s ready.
+            Grabs all unique caller IDs for <strong>IdealConcept</strong> from Ringba
+            (targetName) and CallGrid over a custom date range, dedupes them, and
+            builds a downloadable Excel file. You can leave this page — the file
+            stays available below once it’s ready.
           </p>
           <Row className="g-3 align-items-end">
             <Col md={3}>
@@ -99,10 +94,10 @@ const Kaliper = () => {
             </Col>
             <Col md={3}>
               <Form.Label className="fw-semibold small">End date</Form.Label>
-              <Form.Control type="date" value={endDate} min={startDate} max={yesterdayStr()} onChange={(e) => setEndDate(e.target.value)} disabled={isBusy} />
+              <Form.Control type="date" value={endDate} min={startDate} max={todayStr()} onChange={(e) => setEndDate(e.target.value)} disabled={isBusy} />
             </Col>
             <Col md={3}>
-              <Button variant="success" size="lg" onClick={run} disabled={starting || isBusy}>
+              <Button variant="primary" size="lg" onClick={run} disabled={starting || isBusy}>
                 {starting ? <><Spinner size="sm" className="me-2" />Starting…</> : <><FaPlay className="me-2" />Run Now</>}
               </Button>
             </Col>
@@ -116,7 +111,6 @@ const Kaliper = () => {
         </Card.Body>
       </Card>
 
-      {/* ── Live progress for the tracked job ─────────────────── */}
       {active && isBusy && (
         <Card className="mb-4 border-warning">
           <Card.Body>
@@ -124,13 +118,7 @@ const Kaliper = () => {
               <span className="fw-semibold">{active.label || 'Running…'}</span>
               <span className="text-muted small">{active.phase || 'Working…'}</span>
             </div>
-            <ProgressBar
-              now={active.percent || 0}
-              label={`${active.percent || 0}%`}
-              animated
-              striped
-              variant="warning"
-            />
+            <ProgressBar now={active.percent || 0} label={`${active.percent || 0}%`} animated striped variant="warning" />
             <div className="text-muted small mt-2">
               {(active.fetched || 0).toLocaleString()} records fetched so far — you can safely leave this page.
             </div>
@@ -138,7 +126,6 @@ const Kaliper = () => {
         </Card>
       )}
 
-      {/* ── History / downloads ───────────────────────────────── */}
       <Card>
         <Card.Body>
           <div className="d-flex justify-content-between align-items-center mb-3">
@@ -155,7 +142,7 @@ const Kaliper = () => {
                 <tr>
                   <th>Report</th>
                   <th className="text-center">Status</th>
-                  <th className="text-center">Records</th>
+                  <th className="text-center">Unique IDs</th>
                   <th>Fetched</th>
                   <th className="text-center">Download</th>
                 </tr>
@@ -191,4 +178,4 @@ const Kaliper = () => {
   );
 };
 
-export default Kaliper;
+export default IdealConcept;

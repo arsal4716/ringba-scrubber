@@ -23,6 +23,7 @@ import Admin from './pages/Admin';
 import Targets from './pages/Targets';
 import ScrubFiles from './pages/ScrubFiles';
 import Kaliper from './pages/Kaliper';
+import IdealConcept from './pages/IdealConcept';
 import Publisher from './pages/Publisher';
 import API from './services/api';
 
@@ -231,6 +232,7 @@ function AppShell() {
                 <Nav.Link as={NavLink} to="/files" className="px-3">Files</Nav.Link>
                 <Nav.Link as={NavLink} to="/scrub-files" className="px-3">Scrub Files</Nav.Link>
                 <Nav.Link as={NavLink} to="/kaliper" className="px-3">Kaliper</Nav.Link>
+                <Nav.Link as={NavLink} to="/ideal-concept" className="px-3">IdealConcept</Nav.Link>
                 <Nav.Link as={NavLink} to="/targets" className="px-3 text-success fw-semibold">
                   🎯 Targets
                 </Nav.Link>
@@ -316,6 +318,14 @@ function AppShell() {
           element={
             <ProtectedRoute>
               <Kaliper />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ideal-concept"
+          element={
+            <ProtectedRoute>
+              <IdealConcept />
             </ProtectedRoute>
           }
         />

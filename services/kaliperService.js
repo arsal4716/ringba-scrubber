@@ -150,7 +150,7 @@ class KaliperMCP {
 // ──────────────────────────────────────────────────────────────
 // Pagination
 // ──────────────────────────────────────────────────────────────
-async function fetchAllPages(mcp, targetIds, label, dateFrom, dateTo) {
+async function fetchAllPages(mcp, targetIds, label, dateFrom, dateTo, onPage) {
   const all = [];
   let page = 0;
   let totalPages = 1;
@@ -170,6 +170,10 @@ async function fetchAllPages(mcp, targetIds, label, dateFrom, dateTo) {
     all.push(...pings);
     totalPages = data?.data?.totalPages || 1;
     logger.info(`[kaliper] ${label}: page ${page + 1}/${totalPages} got ${pings.length} (${all.length} total)`);
+
+    if (typeof onPage === "function") {
+      onPage(page + 1, totalPages, all.length);
+    }
 
     page += 1;
     if (page < totalPages) await sleep(DELAY_MS);
@@ -281,7 +285,7 @@ function buildWorkbook(lmRows, hcRows, label) {
 // ──────────────────────────────────────────────────────────────
 // Public entry point
 // ──────────────────────────────────────────────────────────────
-async function runKaliperReport({ dateFrom, dateTo, label } = {}) {
+async function runKaliperReport({ dateFrom, dateTo, label, onProgress } = {}) {
   const token = (process.env.KALIPER_TOKEN || "").trim();
   if (!token) {
     throw new Error("KALIPER_TOKEN is not set on the server");
@@ -290,15 +294,27 @@ async function runKaliperReport({ dateFrom, dateTo, label } = {}) {
     throw new Error("dateFrom and dateTo are required");
   }
 
+  const report = (percent, message, fetched) => {
+    if (typeof onProgress === "function") onProgress(percent, message, fetched);
+  };
+
   logger.info(`[kaliper] Run started window=${dateFrom}..${dateTo}`);
+  report(2, "Connecting to Kaliper…", 0);
   const mcp = new KaliperMCP(KALIPER_URL, token);
   await mcp.initialize();
 
-  const lmPings = await fetchAllPages(mcp, LM_TARGETS, "LeadMarket", dateFrom, dateTo);
+  // LeadMarket = first ~45%, HealthConnect = next ~45%, build = final.
+  const lmPings = await fetchAllPages(mcp, LM_TARGETS, "LeadMarket", dateFrom, dateTo, (page, totalPages, fetched) =>
+    report(Math.round((page / totalPages) * 45), `Fetching LeadMarket ${page}/${totalPages}`, fetched)
+  );
   const lmRows = lmPings.filter(isLmBlocked).map((p) => pingToRow(p, "LeadMarket 360", "CallerId Blocked"));
 
-  const hcPings = await fetchAllPages(mcp, HC_TARGETS, "HealthConnect", dateFrom, dateTo);
+  const hcPings = await fetchAllPages(mcp, HC_TARGETS, "HealthConnect", dateFrom, dateTo, (page, totalPages, fetched) =>
+    report(45 + Math.round((page / totalPages) * 45), `Fetching HealthConnect ${page}/${totalPages}`, lmPings.length + fetched)
+  );
   const hcRows = hcPings.filter(isHcSuppressed).map((p) => pingToRow(p, "HealthConnect", "phs_suppressed"));
+
+  report(95, "Building workbook…", lmPings.length + hcPings.length);
 
   const { wb, overlap, lmPhones, hcPhones } = buildWorkbook(lmRows, hcRows, label || `${dateFrom} .. ${dateTo}`);
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -311,6 +327,7 @@ async function runKaliperReport({ dateFrom, dateTo, label } = {}) {
     overlap: overlap.length,
     lmPingsScanned: lmPings.length,
     hcPingsScanned: hcPings.length,
+    recordCount: lmRows.length + hcRows.length,
   };
   logger.info(`[kaliper] Run done: ${JSON.stringify(summary)}`);
 
