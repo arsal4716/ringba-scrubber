@@ -71,6 +71,11 @@ const PRODUCTS = {
           "cmqsca8by03h806jy18w1flkd", // ACA-Xfers-CPL-RTB
         ],
       },
+      // Kaliper suppressed (LeadMarket blocked + HealthConnect suppressed)
+      // and IdealConcept duplicates, REPORT_SINCE (03-01) → today. Also
+      // saved as downloadable reports. Heavy — they pull months of data.
+      kaliper: { enabled: true },
+      idealconcept: { enabled: true },
     },
   },
 

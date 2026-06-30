@@ -319,6 +319,9 @@ async function runKaliperReport({ dateFrom, dateTo, label, onProgress } = {}) {
   const { wb, overlap, lmPhones, hcPhones } = buildWorkbook(lmRows, hcRows, label || `${dateFrom} .. ${dateTo}`);
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
+  // Suppressed caller IDs (LM blocked + HC suppressed) for the ACA feed.
+  const numbers = [...lmRows, ...hcRows].map((r) => r.phone_raw).filter(Boolean);
+
   const summary = {
     lmRows: lmRows.length,
     lmUnique: lmPhones.size,
@@ -331,7 +334,7 @@ async function runKaliperReport({ dateFrom, dateTo, label, onProgress } = {}) {
   };
   logger.info(`[kaliper] Run done: ${JSON.stringify(summary)}`);
 
-  return { buffer, summary };
+  return { buffer, summary, numbers };
 }
 
 module.exports = { runKaliperReport, fmtPhone };

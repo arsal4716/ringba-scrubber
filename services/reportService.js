@@ -34,6 +34,34 @@ function buildLabel(type, startDate, endDate) {
 }
 
 class ReportService {
+  // Persist an already-built report (buffer + summary) as a completed,
+  // downloadable ReportJob. Used when the daily cron generates a report
+  // inline. Returns the saved job.
+  async saveCompletedReport(type, { startDate, endDate }, buffer, summary = {}) {
+    fs.mkdirSync(REPORTS_DIR, { recursive: true });
+    const label = buildLabel(type, startDate, endDate);
+    const job = await ReportJob.create({
+      type,
+      label,
+      status: "completed",
+      percent: 100,
+      phase: "Completed",
+      params: { startDate, endDate },
+      summary,
+      recordCount: summary.recordCount || 0,
+      startedAt: new Date(),
+      completedAt: new Date(),
+    });
+    const baseName =
+      (type === "kaliper" ? "Kaliper_Suppressed_CallerIDs" : "IdealConcept_CallerIDs") +
+      `_${startDate}_to_${endDate}.xlsx`;
+    const fileName = baseName.replace(/[^\w.-]/g, "_");
+    const filePath = path.join(REPORTS_DIR, `${job._id}__${fileName}`);
+    fs.writeFileSync(filePath, buffer);
+    await ReportJob.findByIdAndUpdate(job._id, { fileName, filePath });
+    return job;
+  }
+
   // Create a job and run it in the background. Returns the queued job.
   async createAndRun(type, { startDate, endDate }) {
     if (!startDate || !endDate) throw new Error("startDate and endDate are required");

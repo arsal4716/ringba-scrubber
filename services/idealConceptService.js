@@ -177,7 +177,7 @@ async function runIdealConceptReport({ dateFrom, dateTo, startDate, endDate, onP
   };
   logger.info(`[idealConcept] done ${JSON.stringify(summary)}`);
 
-  return { buffer, summary };
+  return { buffer, summary, numbers: kept };
 }
 
 module.exports = { runIdealConceptReport };

@@ -14,6 +14,9 @@ const callGridService = require("../services/callGridService");
 const ringbaUploadService = require("../services/ringbaUploadService");
 const googleSheetsService = require("../services/googleSheetsService");
 const fileService = require("../services/fileService");
+const kaliperService = require("../services/kaliperService");
+const idealConceptService = require("../services/idealConceptService");
+const reportService = require("../services/reportService");
 
 const { PRODUCTS, ACTIVE_PRODUCTS, SPECIAL_TARGETS } = require("../config/constants");
 const { filterDNC } = require("../utils/dncFilter");
@@ -172,10 +175,52 @@ async function fetchCallGridSource(productKey, src) {
   return out.numbers || [];
 }
 
+// Eastern window from REPORT_SINCE (default 03-01) through today, used by the
+// Kaliper + IdealConcept feeds that contribute to the ACA suppression.
+function reportWindow() {
+  const now = moment.tz(FILE_DATE_TZ);
+  const sinceMD = process.env.REPORT_SINCE || "03-01";
+  const startDate = `${now.year()}-${sinceMD}`;
+  const endDate = now.format("YYYY-MM-DD");
+  const dateFrom = moment.tz(startDate, "YYYY-MM-DD", FILE_DATE_TZ).startOf("day").toISOString();
+  const dateTo = moment.tz(endDate, "YYYY-MM-DD", FILE_DATE_TZ).endOf("day").toISOString();
+  return { startDate, endDate, dateFrom, dateTo };
+}
+
+// Kaliper LM+HC suppressed caller IDs (also saved as a downloadable report).
+async function fetchKaliperSource() {
+  const { startDate, endDate, dateFrom, dateTo } = reportWindow();
+  const { buffer, summary, numbers } = await kaliperService.runKaliperReport({
+    dateFrom, dateTo, startDate, endDate, label: startDate === endDate ? startDate : `${startDate} → ${endDate}`,
+  });
+  try {
+    await reportService.saveCompletedReport("kaliper", { startDate, endDate }, buffer, summary);
+  } catch (e) {
+    logger.error(`[fetch] kaliper report save failed: ${e?.message || e}`);
+  }
+  return numbers || [];
+}
+
+// IdealConcept duplicate caller IDs (also saved as a downloadable report).
+async function fetchIdealConceptSource() {
+  const { startDate, endDate, dateFrom, dateTo } = reportWindow();
+  const { buffer, summary, numbers } = await idealConceptService.runIdealConceptReport({
+    dateFrom, dateTo, startDate, endDate,
+  });
+  try {
+    await reportService.saveCompletedReport("idealconcept", { startDate, endDate }, buffer, summary);
+  } catch (e) {
+    logger.error(`[fetch] idealconcept report save failed: ${e?.message || e}`);
+  }
+  return numbers || [];
+}
+
 const SOURCE_FETCHERS = {
   ringba: (productKey, src, tz) => fetchRingbaSource(productKey, src, tz),
   qc: (productKey, src) => fetchQcSource(productKey, src),
   callgrid: (productKey, src) => fetchCallGridSource(productKey, src),
+  kaliper: () => fetchKaliperSource(),
+  idealconcept: () => fetchIdealConceptSource(),
 };
 
 // Short, human-readable date-window tokens for QC date presets.
@@ -201,6 +246,8 @@ function buildSourceLabel(product) {
   if (s.callgrid?.enabled) {
     parts.push(`CallGrid ${s.callgrid.days || 30}d${s.callgrid.paid ? " paid" : ""}`);
   }
+  if (s.kaliper?.enabled) parts.push("Kaliper LM+HC");
+  if (s.idealconcept?.enabled) parts.push("IdealConcept dup");
   return parts.join(" + ");
 }
 
