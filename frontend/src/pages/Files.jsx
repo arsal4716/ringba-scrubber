@@ -1,23 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Table, Button, Alert, Badge,Card } from 'react-bootstrap';
-import { FaDownload, FaTrash, FaFileAlt } from 'react-icons/fa';
+import { Container, Table, Button, Alert, Badge, Card, Form, Row, Col } from 'react-bootstrap';
+import { FaDownload, FaTrash, FaFileAlt, FaSyncAlt } from 'react-icons/fa';
 import API from '../services/api';
 
 const Files = () => {
   const [files, setFiles] = useState([]);
   const [error, setError] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [date, setDate] = useState('');
 
   useEffect(() => {
     fetchFiles();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAll, date]);
 
   const fetchFiles = async () => {
     try {
-      const { data } = await API.get('/files');
+      const params = {};
+      if (date) params.date = date;       // a specific day
+      else if (showAll) params.all = true; // everything
+      // else: default = latest run only
+      const { data } = await API.get('/files', { params });
       setFiles(data);
     } catch (err) {
       setError('Failed to load files');
     }
+  };
+
+  const clearFilters = () => {
+    setDate('');
+    setShowAll(false);
   };
 
   const handleDownload = (id, fileName) => {
@@ -49,6 +61,35 @@ const Files = () => {
         <FaFileAlt size={30} className="text-primary me-3" />
         <h2 className="fw-bold mb-0">Generated Files</h2>
       </div>
+
+      {/* ── Filters ──────────────────────────────────────────── */}
+      <Card className="mb-3">
+        <Card.Body>
+          <Row className="g-3 align-items-end">
+            <Col md={3}>
+              <Form.Label className="fw-semibold small">Date</Form.Label>
+              <Form.Control type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </Col>
+            <Col md={3}>
+              <Form.Check
+                type="switch"
+                label="Show all runs"
+                checked={showAll}
+                disabled={!!date}
+                onChange={(e) => setShowAll(e.target.checked)}
+              />
+            </Col>
+            <Col md={3}>
+              <Button variant="outline-secondary" size="sm" onClick={clearFilters}>
+                <FaSyncAlt className="me-1" />Latest run only
+              </Button>
+            </Col>
+          </Row>
+          <p className="text-muted small mb-0 mt-2">
+            {date ? `Showing files for ${date}.` : showAll ? 'Showing all files.' : 'Showing the latest run only — pick a date or toggle “Show all” to see more.'}
+          </p>
+        </Card.Body>
+      </Card>
 
       {error && <Alert variant="danger">{error}</Alert>}
 

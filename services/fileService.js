@@ -70,7 +70,7 @@ class FileService {
    * @param {string} product   e.g. "ACA" | "SSDI"
    * @param {string[]} numbers final, deduped numbers
    */
-  async generateProductFile(dateStr, product, numbers, sourceLabel, nameBase) {
+  async generateProductFile(dateStr, product, numbers, sourceLabel, nameBase, runId) {
     const normalized = (numbers || []).map(toStorageFormat).filter(Boolean);
     const unique = deduplicateNumbers(normalized);
 
@@ -94,6 +94,7 @@ class FileService {
       campaignName: product,
       fetchType: "combined",
       totalNumbers: unique.length,
+      runId: runId || null,
       createdAt: new Date(),
     });
 
