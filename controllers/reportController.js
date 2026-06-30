@@ -82,4 +82,19 @@ const downloadReport = async (req, res) => {
   }
 };
 
-module.exports = { runReport, listReports, getReport, downloadReport };
+// DELETE /api/reports/:id  — remove the job + its file
+const deleteReport = async (req, res) => {
+  try {
+    const job = await ReportJob.findById(req.params.id).lean();
+    if (!job) return res.status(404).json({ error: "Report not found" });
+    if (job.filePath) {
+      await fs.promises.unlink(job.filePath).catch(() => {}); // ignore if already gone
+    }
+    await ReportJob.deleteOne({ _id: req.params.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Delete failed" });
+  }
+};
+
+module.exports = { runReport, listReports, getReport, downloadReport, deleteReport };

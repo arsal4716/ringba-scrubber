@@ -273,6 +273,7 @@ class CallGridService {
           sourceName: row.SourceName || "",
           campaignName: row.CampaignName || "",
           createdAt: row.createdAt || row.UTCISODate || "",
+          state: row.InboundStateCode || row.InboundState || "",
           duplicate: this._looksDuplicate(row),
         });
       }

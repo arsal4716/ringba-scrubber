@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, ProgressBar, Table } from 'react-bootstrap';
-import { FaPlay, FaFileExcel, FaExclamationTriangle, FaFileDownload, FaSyncAlt } from 'react-icons/fa';
+import { FaPlay, FaFileExcel, FaExclamationTriangle, FaFileDownload, FaSyncAlt, FaTrash } from 'react-icons/fa';
 import API from '../services/api';
 
 // "Today" in Eastern time (YYYY-MM-DD) so the picker matches EST, not UTC.
@@ -72,6 +72,13 @@ const Kaliper = () => {
   };
 
   const downloadUrl = (id) => `${API.defaults.baseURL}/reports/${id}/download`;
+  const del = async (id) => {
+    if (!window.confirm('Delete this report and its file?')) return;
+    try {
+      await API.delete(`/reports/${id}`);
+      loadJobs();
+    } catch { /* ignore */ }
+  };
   const isBusy = active && (active.status === 'processing' || active.status === 'queued');
 
   return (
@@ -154,7 +161,7 @@ const Kaliper = () => {
                   <th className="text-center">Status</th>
                   <th className="text-center">Records</th>
                   <th>Fetched</th>
-                  <th className="text-center">Download</th>
+                  <th className="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -168,14 +175,15 @@ const Kaliper = () => {
                     <td className="text-center">{statusBadge(j.status)}</td>
                     <td className="text-center">{(j.recordCount || 0).toLocaleString()}</td>
                     <td className="small text-muted">{j.completedAt ? new Date(j.completedAt).toLocaleString() : '—'}</td>
-                    <td className="text-center">
-                      {j.status === 'completed' && j.fileName ? (
-                        <a href={downloadUrl(j._id)} className="btn btn-sm btn-outline-success" title={j.fileName}>
+                    <td className="text-center text-nowrap">
+                      {j.status === 'completed' && j.fileName && (
+                        <a href={downloadUrl(j._id)} className="btn btn-sm btn-outline-success me-1" title={j.fileName}>
                           <FaFileDownload />
                         </a>
-                      ) : (
-                        <span className="text-muted small">—</span>
                       )}
+                      <Button variant="outline-danger" size="sm" onClick={() => del(j._id)} title="Delete" disabled={j.status === 'processing'}>
+                        <FaTrash />
+                      </Button>
                     </td>
                   </tr>
                 ))}

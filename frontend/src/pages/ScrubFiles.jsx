@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Form, Badge, Button, Spinner } from 'react-bootstrap';
-import { FaFileDownload, FaFolderOpen, FaSyncAlt } from 'react-icons/fa';
+import { FaFileDownload, FaFolderOpen, FaSyncAlt, FaTrash } from 'react-icons/fa';
 import API from '../services/api';
 
 // Today's date as YYYY-MM-DD (local).
@@ -51,6 +51,13 @@ const ScrubFiles = () => {
   }, [date, publisher]);
 
   const downloadUrl = (id) => `${API.defaults.baseURL}/publisher/job/${id}/download`;
+  const del = async (id) => {
+    if (!window.confirm('Delete this scrub file?')) return;
+    try {
+      await API.delete(`/admin/scrub-jobs/${id}`);
+      fetchJobs();
+    } catch { /* ignore */ }
+  };
 
   return (
     <Container className="mt-5">
@@ -110,7 +117,7 @@ const ScrubFiles = () => {
                   <th className="text-center text-warning">Dup</th>
                   <th className="text-center text-danger">DNC</th>
                   <th className="text-center">Time</th>
-                  <th className="text-center">Download</th>
+                  <th className="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -129,14 +136,15 @@ const ScrubFiles = () => {
                     <td className="text-center small text-muted">
                       {new Date(j.createdAt).toLocaleTimeString()}
                     </td>
-                    <td className="text-center">
-                      {j.status === 'completed' && j.downloadFilePath ? (
-                        <a href={downloadUrl(j._id)} className="btn btn-sm btn-outline-success" title="Download scrubbed file">
+                    <td className="text-center text-nowrap">
+                      {j.status === 'completed' && j.downloadFilePath && (
+                        <a href={downloadUrl(j._id)} className="btn btn-sm btn-outline-success me-1" title="Download scrubbed file">
                           <FaFileDownload />
                         </a>
-                      ) : (
-                        <span className="text-muted small">—</span>
                       )}
+                      <Button variant="outline-danger" size="sm" onClick={() => del(j._id)} title="Delete">
+                        <FaTrash />
+                      </Button>
                     </td>
                   </tr>
                 ))}

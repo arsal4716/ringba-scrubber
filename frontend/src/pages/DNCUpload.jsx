@@ -140,6 +140,27 @@ const DNCUpload = () => {
               )}
             </Card.Body>
           </Card>
+
+          {/* ── Downloads ────────────────────────────────────── */}
+          <Card className="mt-3">
+            <Card.Body className="p-4">
+              <h5 className="fw-bold mb-3">⬇️ Download lists</h5>
+              <div className="d-grid gap-2">
+                <a href={`${API.defaults.baseURL}/dnc/download`} className="btn btn-outline-danger">
+                  DNC numbers only
+                </a>
+                <a href={`${API.defaults.baseURL}/dnc/download/ACA`} className="btn btn-outline-primary">
+                  DNC + all ACA numbers (DB)
+                </a>
+                <a href={`${API.defaults.baseURL}/dnc/download/SSDI`} className="btn btn-outline-success">
+                  DNC + all SSDI numbers (DB)
+                </a>
+              </div>
+              <p className="text-muted small mb-0 mt-3">
+                Combined files are de-duplicated and exported as 11-digit numbers (one per line).
+              </p>
+            </Card.Body>
+          </Card>
         </Col>
       </Row>
     </Container>
