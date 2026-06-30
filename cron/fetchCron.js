@@ -257,7 +257,7 @@ function buildSourceLabel(product) {
  * target id → { numbers, fileName }. Targets not in the map use the
  * normal combined product file.
  */
-async function buildSpecialTargetFiles(productKey, timezone, dateStr) {
+async function buildSpecialTargetFiles(productKey, timezone, dateStr, runId) {
   const map = new Map();
 
   for (const [targetId, spec] of Object.entries(SPECIAL_TARGETS || {})) {
@@ -298,7 +298,8 @@ async function buildSpecialTargetFiles(productKey, timezone, dateStr) {
         productKey,
         finalNumbers,
         label,
-        spec.label // file named after the target, e.g. ProHealthPartners-ACA-Xfers-CPL
+        spec.label, // file named after the target, e.g. ProHealthPartners-ACA-Xfers-CPL
+        runId
       );
 
       map.set(targetId, {
@@ -387,11 +388,13 @@ async function processProduct(productKey, timezone, runId, dateStr) {
     dateStr,
     productKey,
     finalNumbers,
-    sourceLabel
+    sourceLabel,
+    null,
+    runId
   );
 
   // Build any dedicated per-target files (e.g. ProHealthPartners long calls).
-  const specialFiles = await buildSpecialTargetFiles(productKey, timezone, dateStr);
+  const specialFiles = await buildSpecialTargetFiles(productKey, timezone, dateStr, runId);
 
   // Upload to every enabled Ringba target for this product.
   const targetResults = await uploadToTargets(

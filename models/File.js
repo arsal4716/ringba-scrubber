@@ -6,6 +6,7 @@ const fileSchema = new mongoose.Schema({
   campaignName: { type: String, required: true },
   fetchType: { type: String, enum: ["45days", "1year", "combined"] },
   totalNumbers: { type: Number, required: true },
+  runId: { type: String, index: true }, // groups files from the same run
   createdAt: { type: Date, default: Date.now, index: true },
 });
 
