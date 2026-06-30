@@ -29,7 +29,7 @@ const deleteFile = async (req, res) => {
     if (!file) return res.status(404).json({ error: 'File not found' });
 
     const filePath = path.join(__dirname, '../uploads/generated', file.fileName);
-    await fs.promises.unlink(filePath);
+    await fs.promises.unlink(filePath).catch(() => {}); // ignore if already gone
     await File.deleteOne({ _id: req.params.id });
 
     res.json({ success: true });

@@ -1,5 +1,7 @@
 "use strict";
 
+const path = require("path");
+const fs = require("fs");
 const moment = require("moment-timezone");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
@@ -132,10 +134,27 @@ const deletePublisher = async (req, res) => {
   }
 };
 
+// ─── DELETE /api/admin/scrub-jobs/:id ─────────────────────────
+const deleteScrubJob = async (req, res) => {
+  try {
+    const job = await ScrubJob.findById(req.params.id).lean();
+    if (!job) return res.status(404).json({ error: "Scrub job not found" });
+    if (job.downloadFilePath) {
+      const filePath = path.join(__dirname, "../uploads/scrub-output", job.downloadFilePath);
+      await fs.promises.unlink(filePath).catch(() => {});
+    }
+    await ScrubJob.deleteOne({ _id: req.params.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Delete failed" });
+  }
+};
+
 module.exports = {
   getPublishers,
   createPublisher,
   updatePublisher,
   deletePublisher,
   getScrubJobs,
+  deleteScrubJob,
 };
