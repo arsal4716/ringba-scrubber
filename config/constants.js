@@ -71,10 +71,13 @@ const PRODUCTS = {
           "cmqsca8by03h806jy18w1flkd", // ACA-Xfers-CPL-RTB
         ],
       },
-      // Kaliper suppressed (LeadMarket blocked + HealthConnect suppressed)
-      // and IdealConcept duplicates, REPORT_SINCE (03-01) → today. Also
-      // saved as downloadable reports. Heavy — they pull months of data.
-      kaliper: { enabled: true },
+      // Kaliper suppressed (LeadMarket blocked + HealthConnect suppressed) —
+      // APPEND model, fetched DAY BY DAY (Kaliper rejects multi-day ranges).
+      // Backfills REPORT_SINCE (03-01) → yesterday once, then appends new
+      // days each run into a never-rebuilt master.
+      kaliper: { enabled: true, appendModel: true },
+      // IdealConcept duplicates (Ringba + CallGrid + SalesRadix), full
+      // re-fetch each run.
       idealconcept: { enabled: true },
     },
   },
