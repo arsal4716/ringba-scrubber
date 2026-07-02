@@ -6,6 +6,7 @@ const moment = require("moment-timezone");
 const Job = require("../models/Job");
 const Call = require("../models/Call");
 const Target = require("../models/Target");
+const SourceState = require("../models/SourceState");
 
 const jobService = require("../services/jobService");
 const ringbaService = require("../services/ringbaService");
@@ -187,18 +188,67 @@ function reportWindow() {
   return { startDate, endDate, dateFrom, dateTo };
 }
 
-// Kaliper LM+HC suppressed caller IDs (also saved as a downloadable report).
-async function fetchKaliperSource() {
-  const { startDate, endDate, dateFrom, dateTo } = reportWindow();
-  const { buffer, summary, numbers } = await kaliperService.runKaliperReport({
-    dateFrom, dateTo, startDate, endDate, label: startDate === endDate ? startDate : `${startDate} → ${endDate}`,
-  });
-  try {
-    await reportService.saveCompletedReport("kaliper", { startDate, endDate }, buffer, summary);
-  } catch (e) {
-    logger.error(`[fetch] kaliper report save failed: ${e?.message || e}`);
+// Append raw numbers to an append-only master (Call collection, deduped by
+// the unique (phoneNumber, campaignName, fetchType) index). Returns count
+// of newly-inserted numbers.
+async function appendToMaster(campaignName, fetchType, rawNumbers) {
+  const cleaned = [...new Set((rawNumbers || []).map(normalizePhone).filter(Boolean))];
+  if (!cleaned.length) return 0;
+
+  const docs = cleaned.map((phoneNumber) => ({
+    phoneNumber, campaignName, fetchType, fetchedAt: new Date(), createdAt: new Date(),
+  }));
+
+  let inserted = 0;
+  const BATCH = 2000;
+  for (let i = 0; i < docs.length; i += BATCH) {
+    try {
+      const res = await Call.collection.insertMany(docs.slice(i, i + BATCH), { ordered: false });
+      inserted += res?.insertedCount || 0;
+    } catch (err) {
+      if (err.code === 11000) inserted += err.result?.insertedCount || 0; // dup keys are fine
+      else throw err;
+    }
   }
-  return numbers || [];
+  return inserted;
+}
+
+// Kaliper LM+HC — APPEND model, DAY BY DAY (Kaliper rejects multi-day
+// ranges). Backfills REPORT_SINCE (03-01) → yesterday the first time, then
+// each run only pulls the days since the last run and appends. The ACA feed
+// uses the full accumulated master.
+async function fetchKaliperSource() {
+  const tz = FILE_DATE_TZ;
+  const yesterday = moment.tz(tz).subtract(1, "day").format("YYYY-MM-DD");
+  const sinceMD = process.env.REPORT_SINCE || "03-01";
+  const backfillStart = `${moment.tz(tz).year()}-${sinceMD}`;
+
+  const state = await SourceState.findOne({ key: "kaliper" }).lean();
+  const start = state?.lastDate
+    ? moment.tz(state.lastDate, "YYYY-MM-DD", tz).add(1, "day").format("YYYY-MM-DD")
+    : backfillStart;
+
+  if (start <= yesterday) {
+    logger.info(`[fetch] kaliper append: pulling ${start} .. ${yesterday} day-by-day`);
+    const raw = await kaliperService.fetchSuppressedByDays({
+      startDate: start,
+      endDate: yesterday,
+      onProgress: (i, total, fetched, day) =>
+        logger.info(`[fetch] kaliper day ${i}/${total} (${day}) rawTotal=${fetched}`),
+    });
+    const appended = await appendToMaster("ACA", "kaliper", raw);
+    await SourceState.updateOne(
+      { key: "kaliper" },
+      { key: "kaliper", lastDate: yesterday, updatedAt: new Date() },
+      { upsert: true }
+    );
+    logger.info(`[fetch] kaliper appended=${appended} (newRaw=${raw.length})`);
+  } else {
+    logger.info(`[fetch] kaliper master already current (last=${state?.lastDate})`);
+  }
+
+  // Return the FULL master for the ACA combined set.
+  return Call.find({ campaignName: "ACA", fetchType: "kaliper" }).distinct("phoneNumber").lean();
 }
 
 // IdealConcept duplicate caller IDs (also saved as a downloadable report).
@@ -354,13 +404,20 @@ async function processProduct(productKey, timezone, runId, dateStr) {
       );
     }
 
-    // Save a per-source DB snapshot.
-    const saveRes = await replaceCallsSnapshot({
-      campaignName: productKey,
-      fetchType: sourceName,
-      numbers,
-      runId,
-    });
+    // Append-model sources (e.g. kaliper) manage their own append-only
+    // master inside the fetcher and return the full master — do NOT wipe it
+    // with a snapshot replace. Everyone else gets a fresh daily snapshot.
+    let saveRes;
+    if (src.appendModel) {
+      saveRes = { inserted: numbers.length };
+    } else {
+      saveRes = await replaceCallsSnapshot({
+        campaignName: productKey,
+        fetchType: sourceName,
+        numbers,
+        runId,
+      });
+    }
 
     sourceStats.push({ source: sourceName, fetched: numbers.length, saved: saveRes.inserted });
     combinedRaw.push(...numbers);

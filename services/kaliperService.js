@@ -19,6 +19,7 @@
 
 const axios = require("axios");
 const XLSX = require("xlsx");
+const moment = require("moment-timezone");
 const logger = require("../utils/logger");
 
 const KALIPER_URL = process.env.KALIPER_URL || "https://app-0.thekaliper.com/mcp";
@@ -337,4 +338,56 @@ async function runKaliperReport({ dateFrom, dateTo, label, onProgress } = {}) {
   return { buffer, summary, numbers };
 }
 
-module.exports = { runKaliperReport, fmtPhone };
+// Inclusive list of YYYY-MM-DD days from startDate..endDate (Eastern).
+function enumerateDays(startDate, endDate) {
+  const days = [];
+  let cur = moment.tz(startDate, "YYYY-MM-DD", TIMEZONE);
+  const end = moment.tz(endDate, "YYYY-MM-DD", TIMEZONE);
+  let guard = 0;
+  while (cur.isSameOrBefore(end, "day") && guard++ < 4000) {
+    days.push(cur.format("YYYY-MM-DD"));
+    cur = cur.add(1, "day");
+  }
+  return days;
+}
+
+// LM+HC suppressed raw phones for a SINGLE Eastern day.
+async function fetchSuppressedForDay(mcp, day) {
+  const dateFrom = moment.tz(day, "YYYY-MM-DD", TIMEZONE).startOf("day").toISOString();
+  const dateTo = moment.tz(day, "YYYY-MM-DD", TIMEZONE).endOf("day").toISOString();
+  const lmPings = await fetchAllPages(mcp, LM_TARGETS, `LM ${day}`, dateFrom, dateTo);
+  const hcPings = await fetchAllPages(mcp, HC_TARGETS, `HC ${day}`, dateFrom, dateTo);
+  const lm = lmPings.filter(isLmBlocked).map((p) => p.phone).filter(Boolean);
+  const hc = hcPings.filter(isHcSuppressed).map((p) => p.phone).filter(Boolean);
+  return [...lm, ...hc];
+}
+
+/**
+ * Fetch Kaliper LM+HC suppressed caller IDs DAY BY DAY — Kaliper rejects
+ * multi-day ranges, so each day is queried separately. Returns raw phone
+ * strings for the whole [startDate, endDate] window (Eastern, inclusive).
+ *
+ * @param {{ startDate:string, endDate:string, onProgress?:(done,total,fetched,day)=>void }} opts
+ */
+async function fetchSuppressedByDays({ startDate, endDate, onProgress } = {}) {
+  const token = (process.env.KALIPER_TOKEN || "").trim();
+  if (!token) throw new Error("KALIPER_TOKEN is not set on the server");
+
+  const days = enumerateDays(startDate, endDate);
+  if (!days.length) return [];
+
+  const mcp = new KaliperMCP(KALIPER_URL, token);
+  await mcp.initialize();
+
+  const all = [];
+  for (let i = 0; i < days.length; i++) {
+    const nums = await fetchSuppressedForDay(mcp, days[i]);
+    all.push(...nums);
+    if (typeof onProgress === "function") onProgress(i + 1, days.length, all.length, days[i]);
+    if (i < days.length - 1) await sleep(DELAY_MS);
+  }
+  logger.info(`[kaliper] day-by-day ${days[0]}..${days[days.length - 1]} raw=${all.length}`);
+  return all;
+}
+
+module.exports = { runKaliperReport, fetchSuppressedByDays, fmtPhone };

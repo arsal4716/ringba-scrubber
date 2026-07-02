@@ -13,7 +13,11 @@ import {
   Navbar, Nav, Container, Form, Button,
   Card, Alert, Spinner, InputGroup,
 } from 'react-bootstrap';
-import { FaLock, FaEye, FaEyeSlash, FaSignOutAlt, FaShieldAlt } from 'react-icons/fa';
+import {
+  FaLock, FaEye, FaEyeSlash, FaSignOutAlt, FaShieldAlt, FaBars,
+  FaTachometerAlt, FaClock, FaBan, FaFileAlt, FaFolderOpen,
+  FaFileExcel, FaPhoneAlt, FaBullseye, FaCog, FaShareSquare,
+} from 'react-icons/fa';
 
 import Dashboard from './pages/Dashboard';
 import Schedule from './pages/Schedule';
@@ -197,74 +201,100 @@ function LoginPage() {
 // ─────────────────────────────────────────────────────────────
 // App Shell (Navbar + Routes)
 // ─────────────────────────────────────────────────────────────
+const NAV_ITEMS = [
+  { to: '/dashboard', label: 'Dashboard', icon: <FaTachometerAlt />, end: true },
+  { to: '/schedule', label: 'Schedule', icon: <FaClock /> },
+  { to: '/dnc-upload', label: 'DNC Upload', icon: <FaBan /> },
+  { to: '/files', label: 'Files', icon: <FaFileAlt /> },
+  { to: '/scrub-files', label: 'Scrub Files', icon: <FaFolderOpen /> },
+  { to: '/kaliper', label: 'Kaliper', icon: <FaFileExcel /> },
+  { to: '/ideal-concept', label: 'IdealConcept', icon: <FaPhoneAlt /> },
+  { to: '/targets', label: 'Targets', icon: <FaBullseye /> },
+  { to: '/admin', label: 'Admin', icon: <FaCog /> },
+];
+
 function AppShell() {
   const { authed, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Don't show the main navbar on the public publisher portal (now the
-  // root page) or the login page.
+  // Don't show the sidebar on the public publisher portal (root) or login.
   const isPublicPage =
     location.pathname === '/' ||
     location.pathname === '/publisher' ||
     location.pathname === '/login';
+
+  // Close the mobile sidebar whenever the route changes.
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
   };
 
+  const showChrome = !isPublicPage && authed;
+
   return (
-    <>
-      {/* ── Navbar: only shown on protected pages ─────────── */}
-      {!isPublicPage && authed && (
-        <Navbar bg="dark" variant="dark" expand="lg" className="py-3 shadow-sm">
-          <Container>
-            <Navbar.Brand as={Link} to="/dashboard" className="fw-bold">
-              📞 Ringba Scrub Platform
-            </Navbar.Brand>
-            <Navbar.Toggle aria-controls="main-nav" />
-            <Navbar.Collapse id="main-nav">
-              <Nav className="ms-auto gap-1 align-items-lg-center">
-                <Nav.Link as={NavLink} to="/dashboard" end className="px-3">Dashboard</Nav.Link>
-                <Nav.Link as={NavLink} to="/schedule" className="px-3">Schedule</Nav.Link>
-                <Nav.Link as={NavLink} to="/dnc-upload" className="px-3">DNC Upload</Nav.Link>
-                <Nav.Link as={NavLink} to="/files" className="px-3">Files</Nav.Link>
-                <Nav.Link as={NavLink} to="/scrub-files" className="px-3">Scrub Files</Nav.Link>
-                <Nav.Link as={NavLink} to="/kaliper" className="px-3">Kaliper</Nav.Link>
-                <Nav.Link as={NavLink} to="/ideal-concept" className="px-3">IdealConcept</Nav.Link>
-                <Nav.Link as={NavLink} to="/targets" className="px-3 text-success fw-semibold">
-                  🎯 Targets
-                </Nav.Link>
-                <Nav.Link as={NavLink} to="/admin" className="px-3 text-warning fw-semibold">
-                  ⚙️ Admin
-                </Nav.Link>
-                <Nav.Link
-                  as={Link}
-                  to="/publisher"
-                  className="px-3 text-info fw-semibold"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Opens Publisher Portal in new tab"
+    <div className="app-shell">
+      {showChrome && (
+        <>
+          {/* ── Mobile top bar (hamburger) ─────────────────── */}
+          <div className="topbar-mobile">
+            <Button variant="link" className="text-white p-0" onClick={() => setSidebarOpen(true)}>
+              <FaBars size={22} />
+            </Button>
+            <span className="fw-bold">📞 Ringba Scrub</span>
+          </div>
+
+          {/* ── Sidebar ────────────────────────────────────── */}
+          <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+            <div className="sidebar-brand">
+              <span className="brand-badge"><FaShieldAlt color="#fff" /></span>
+              <span>Ringba Scrub</span>
+            </div>
+
+            <nav className="sidebar-nav">
+              {NAV_ITEMS.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className="sidebar-link"
                 >
-                  📤 Publisher ↗
-                </Nav.Link>
-                <Button
-                  variant="outline-danger"
-                  size="sm"
-                  className="ms-2 px-3"
-                  onClick={handleLogout}
-                >
-                  <FaSignOutAlt className="me-1" />Logout
-                </Button>
-              </Nav>
-            </Navbar.Collapse>
-          </Container>
-        </Navbar>
+                  <span className="sidebar-icon">{item.icon}</span>
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+
+              <div className="sidebar-heading">External</div>
+              <a
+                className="sidebar-link"
+                href="/publisher"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="sidebar-icon"><FaShareSquare /></span>
+                <span>Publisher ↗</span>
+              </a>
+            </nav>
+
+            <div className="sidebar-footer">
+              <button className="sidebar-link w-100 border-0 bg-transparent" onClick={handleLogout}>
+                <span className="sidebar-icon"><FaSignOutAlt /></span>
+                <span>Logout</span>
+              </button>
+            </div>
+          </aside>
+
+          {/* Backdrop (mobile, when sidebar open) */}
+          <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+        </>
       )}
 
-      {/* ── Routes ────────────────────────────────────────── */}
-      <Routes>
+      <div className={showChrome ? 'main-content' : ''}>
+        {/* ── Routes ──────────────────────────────────────── */}
+        <Routes>
         {/* ── PUBLIC: Publisher portal is the landing page (root) ── */}
         <Route path="/" element={<Publisher />} />
         <Route path="/publisher" element={<Publisher />} />
@@ -348,8 +378,9 @@ function AppShell() {
 
         {/* ── Fallback ── */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </>
+        </Routes>
+      </div>
+    </div>
   );
 }
 
